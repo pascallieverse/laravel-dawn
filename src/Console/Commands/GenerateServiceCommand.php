@@ -8,11 +8,11 @@ use Illuminate\Support\Str;
 class GenerateServiceCommand extends Command
 {
     protected $signature = 'dawn:service
-        {type? : The service type to generate (supervisor, systemd)}
+        {type? : The service type to generate (supervisor, systemd, launchd, windows)}
         {--user= : The system user to run Dawn as (auto-detected on Forge)}
         {--log= : Log file path (default: storage/logs/dawn.log)}';
 
-    protected $description = 'Generate a Supervisor or systemd service configuration';
+    protected $description = 'Generate a service configuration for your platform';
 
     public function handle(): int
     {
@@ -22,12 +22,16 @@ class GenerateServiceCommand extends Command
             $type = $this->choice('Which service manager do you use?', [
                 'supervisor',
                 'systemd',
-            ], 0);
+                'launchd',
+                'windows',
+            ], $this->detectDefaultChoice());
         }
 
         return match ($type) {
             'supervisor' => $this->generateSupervisor(),
             'systemd' => $this->generateSystemd(),
+            'launchd' => $this->generateLaunchd(),
+            'windows' => $this->generateWindows(),
             default => $this->invalidType($type),
         };
     }
@@ -163,9 +167,127 @@ class GenerateServiceCommand extends Command
         return 'www-data';
     }
 
+    protected function generateLaunchd(): int
+    {
+        $config = $this->resolveConfig();
+        $name = $config['service_name'];
+        $label = 'com.dawn.' . Str::slug($config['app_name']);
+
+        $plist = <<<PLIST
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Label</key>
+            <string>{$label}</string>
+            <key>ProgramArguments</key>
+            <array>
+                <string>{$config['dawn_bin']}</string>
+                <string>--working-dir</string>
+                <string>{$config['app_dir']}</string>
+                <string>--php</string>
+                <string>{$config['php_bin']}</string>
+                <string>--log-level</string>
+                <string>info</string>
+            </array>
+            <key>WorkingDirectory</key>
+            <string>{$config['app_dir']}</string>
+            <key>RunAtLoad</key>
+            <true/>
+            <key>KeepAlive</key>
+            <true/>
+            <key>StandardOutPath</key>
+            <string>{$config['log_file']}</string>
+            <key>StandardErrorPath</key>
+            <string>{$config['log_file']}</string>
+        </dict>
+        </plist>
+        PLIST;
+
+        $plist = $this->dedent($plist);
+        $outputPath = base_path("{$label}.plist");
+
+        file_put_contents($outputPath, $plist . "\n");
+
+        $this->info("launchd plist written to {$outputPath}");
+        $this->newLine();
+        $this->line('To install as a user agent (runs when you log in):');
+        $this->line("  cp {$outputPath} ~/Library/LaunchAgents/{$label}.plist");
+        $this->line("  launchctl load ~/Library/LaunchAgents/{$label}.plist");
+        $this->newLine();
+        $this->line('To install as a system daemon (runs at boot):');
+        $this->line("  sudo cp {$outputPath} /Library/LaunchDaemons/{$label}.plist");
+        $this->line("  sudo launchctl load /Library/LaunchDaemons/{$label}.plist");
+        $this->newLine();
+        $this->line('To stop:');
+        $this->line("  launchctl unload ~/Library/LaunchAgents/{$label}.plist");
+
+        return 0;
+    }
+
+    protected function generateWindows(): int
+    {
+        $config = $this->resolveConfig();
+        $name = $config['service_name'];
+        $dawnBin = str_replace('/', '\\', $config['dawn_bin']);
+        $appDir = str_replace('/', '\\', $config['app_dir']);
+        $phpBin = str_replace('/', '\\', $config['php_bin']);
+        $logFile = str_replace('/', '\\', $config['log_file']);
+
+        $bat = <<<BAT
+        @echo off
+        REM Dawn Queue Manager - {$config['app_name']}
+        REM Run this script to start Dawn in the foreground.
+        REM For a Windows Service, use NSSM (see instructions below).
+
+        "{$dawnBin}" --working-dir "{$appDir}" --php "{$phpBin}" --log-file "{$logFile}" --log-level info
+        BAT;
+
+        $bat = $this->dedent($bat);
+        $batPath = base_path("{$name}.bat");
+
+        file_put_contents($batPath, $bat . "\r\n");
+
+        $this->info("Startup script written to {$batPath}");
+        $this->newLine();
+        $this->line('To run Dawn in the foreground:');
+        $this->line("  {$name}.bat");
+        $this->newLine();
+        $this->line('To install as a Windows Service using NSSM (https://nssm.cc):');
+        $this->line("  nssm install {$name} \"{$dawnBin}\"");
+        $this->line("  nssm set {$name} AppParameters \"--working-dir \\\"{$appDir}\\\" --php \\\"{$phpBin}\\\" --log-file \\\"{$logFile}\\\" --log-level info\"");
+        $this->line("  nssm set {$name} AppDirectory \"{$appDir}\"");
+        $this->line("  nssm set {$name} Description \"Dawn Queue Manager ({$config['app_name']})\"");
+        $this->line("  nssm set {$name} Start SERVICE_AUTO_START");
+        $this->line("  nssm start {$name}");
+        $this->newLine();
+        $this->line('To uninstall:');
+        $this->line("  nssm stop {$name}");
+        $this->line("  nssm remove {$name} confirm");
+
+        return 0;
+    }
+
+    /**
+     * Detect the best default choice based on the current OS.
+     */
+    protected function detectDefaultChoice(): int
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            return 3; // windows
+        }
+
+        if (PHP_OS_FAMILY === 'Darwin') {
+            return 2; // launchd
+        }
+
+        // Linux — default to supervisor
+        return 0;
+    }
+
     protected function invalidType(string $type): int
     {
-        $this->error("Unknown service type: {$type}. Use 'supervisor' or 'systemd'.");
+        $this->error("Unknown service type: {$type}. Use 'supervisor', 'systemd', 'launchd', or 'windows'.");
 
         return 1;
     }

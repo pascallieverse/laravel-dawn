@@ -132,12 +132,14 @@ Jobs excluded from monitoring and metrics:
 Dawn can generate a ready-to-use config for your process manager:
 
 ```bash
-# Interactive — prompts you to choose
+# Interactive — auto-detects your OS and suggests the right option
 php artisan dawn:service
 
 # Or specify directly
-php artisan dawn:service supervisor
-php artisan dawn:service systemd
+php artisan dawn:service supervisor   # Linux (Supervisor)
+php artisan dawn:service systemd      # Linux (systemd)
+php artisan dawn:service launchd      # macOS
+php artisan dawn:service windows      # Windows (NSSM)
 ```
 
 Options:
@@ -146,7 +148,7 @@ Options:
 php artisan dawn:service supervisor --user=deploy --log=/var/log/dawn.log
 ```
 
-#### Supervisor
+#### Supervisor (Linux)
 
 ```bash
 php artisan dawn:service supervisor
@@ -157,7 +159,7 @@ sudo supervisorctl update
 sudo supervisorctl start dawn-my-app
 ```
 
-#### systemd
+#### systemd (Linux)
 
 ```bash
 php artisan dawn:service systemd
@@ -167,6 +169,24 @@ sudo systemctl daemon-reload
 sudo systemctl enable dawn-my-app
 sudo systemctl start dawn-my-app
 ```
+
+#### launchd (macOS)
+
+```bash
+php artisan dawn:service launchd
+# Outputs: com.dawn.{app-name}.plist
+cp com.dawn.my-app.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.dawn.my-app.plist
+```
+
+#### Windows Service (NSSM)
+
+```bash
+php artisan dawn:service windows
+# Outputs: dawn-{app-name}.bat (foreground) + NSSM install instructions
+```
+
+To run as a Windows Service, install [NSSM](https://nssm.cc) and follow the printed instructions. Dawn also generates a `.bat` file for running in the foreground during development.
 
 The generated configs include the correct paths to your PHP binary and project directory — no manual editing needed. On Forge servers, the user is auto-detected (including isolated sites).
 
@@ -204,7 +224,7 @@ If you need to change the prefix after install, update `DAWN_PREFIX` in `.env` a
 | Command | Description |
 |---|---|
 | `dawn:install` | Install Dawn (config, assets, .env setup) |
-| `dawn:service` | Generate Supervisor or systemd service config |
+| `dawn:service` | Generate service config (Supervisor, systemd, launchd, Windows) |
 | `dawn:export-config` | Export config as JSON (for static config or debugging) |
 | `dawn:status` | Show supervisor status |
 | `dawn:pause` | Pause queue processing |
