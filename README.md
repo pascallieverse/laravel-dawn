@@ -7,7 +7,7 @@ A Rust-powered queue manager and dashboard for Laravel. Dawn replaces PHP as the
 - PHP 8.1+
 - Laravel 10, 11, or 12
 - Redis
-- `ext-pcntl`
+- `ext-pcntl` (Linux/macOS only — not required on Windows)
 
 ## Quick Start
 
