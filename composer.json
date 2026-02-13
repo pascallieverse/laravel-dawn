@@ -1,0 +1,48 @@
+{
+    "name": "pascallieverse/laravel-dawn",
+    "description": "Rust-powered Laravel queue manager dashboard",
+    "keywords": ["laravel", "queue", "redis", "dashboard", "rust"],
+    "license": "MIT",
+    "require": {
+        "php": "^8.1",
+        "ext-json": "*",
+        "ext-pcntl": "*",
+        "illuminate/contracts": "^10.0|^11.0|^12.0",
+        "illuminate/queue": "^10.0|^11.0|^12.0",
+        "illuminate/support": "^10.0|^11.0|^12.0",
+        "livewire/livewire": "^4.0",
+        "ramsey/uuid": "^4.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^10.0|^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Dawn\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Dawn\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Dawn\\DawnServiceProvider"
+            ],
+            "aliases": {
+                "Dawn": "Dawn\\Dawn"
+            }
+        }
+    },
+    "bin": [
+        "bin/dawn"
+    ],
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
