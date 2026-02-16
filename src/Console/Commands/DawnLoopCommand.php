@@ -42,8 +42,20 @@ class DawnLoopCommand extends Command
 
             $result = $this->processJob($line);
 
-            // Write result as JSON to stdout
-            fwrite(STDOUT, json_encode($result) . "\n");
+            // Encode result as JSON, handling non-UTF-8 bytes gracefully
+            $json = json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE);
+
+            if ($json === false) {
+                // Fallback: encode a minimal failure result if json_encode still fails
+                $json = json_encode([
+                    'status' => 'failed',
+                    'exception' => 'Job failed (result could not be JSON-encoded: ' . json_last_error_msg() . ')',
+                    'trace' => '',
+                    'memory' => 0,
+                ]);
+            }
+
+            fwrite(STDOUT, $json . "\n");
             fflush(STDOUT);
         }
 
@@ -91,10 +103,15 @@ class DawnLoopCommand extends Command
                 'trace' => $e->getTraceAsString(),
             ]);
 
+            // Truncate exception/trace to prevent oversized JSON responses
+            // that could cause encoding issues or slow down Redis storage
+            $exceptionMsg = get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 2000) . ' in ' . $e->getFile() . ':' . $e->getLine();
+            $trace = mb_substr($e->getTraceAsString(), 0, 8000);
+
             return [
                 'status' => 'failed',
-                'exception' => get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
-                'trace' => $e->getTraceAsString(),
+                'exception' => $exceptionMsg,
+                'trace' => $trace,
                 'memory' => memory_get_usage() - $startMemory,
             ];
         }
