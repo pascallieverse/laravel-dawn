@@ -119,11 +119,17 @@ class GenerateServiceCommand extends Command
         $user = $this->option('user') ?: $this->detectUser($appDir);
         $serviceName = 'dawn-' . Str::slug($appName);
 
+        $dawnBin = $appDir . '/vendor/bin/dawn';
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $dawnBin .= '.bat';
+        }
+
         return [
             'app_dir' => $appDir,
             'app_name' => $appName,
             'service_name' => $serviceName,
-            'dawn_bin' => $appDir . '/vendor/bin/dawn',
+            'dawn_bin' => $dawnBin,
             'php_bin' => PHP_BINARY,
             'user' => $user,
             'log_file' => $logFile,

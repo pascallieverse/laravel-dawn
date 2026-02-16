@@ -28,7 +28,7 @@ class InstallCommand extends Command
         $this->info('Dawn installed successfully.');
         $this->newLine();
         $this->info('Start the worker with:');
-        $this->line('  ./vendor/bin/dawn');
+        $this->line(PHP_OS_FAMILY === 'Windows' ? '  vendor\\bin\\dawn' : '  ./vendor/bin/dawn');
 
         return 0;
     }

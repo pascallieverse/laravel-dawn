@@ -1,0 +1,11 @@
+# Platform binaries — treat as binary, no line-ending conversion
+bin/dawn-linux-x64       binary
+bin/dawn-linux-arm64     binary
+bin/dawn-darwin-x64      binary
+bin/dawn-darwin-arm64    binary
+bin/dawn-windows-x64.exe binary
+
+# Exclude from Composer dist archive (keeps download lean)
+/dawn-core/              export-ignore
+/tests/                  export-ignore
+/.github/                export-ignore
