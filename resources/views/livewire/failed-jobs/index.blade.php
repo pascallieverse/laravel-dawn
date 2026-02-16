@@ -29,30 +29,38 @@
                     @foreach($jobs as $job)
                         <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                             <td class="px-3 sm:px-6 py-4">
-                                <a
-                                    href="{{ route('dawn.failed.show', ['id' => $job['id'] ?? '']) }}"
-                                    wire:navigate
-                                    class="text-sm font-medium text-dawn-600 dark:text-dawn-400 hover:text-dawn-700 dark:hover:text-dawn-300"
-                                >
-                                    {{ $job['class'] ?? $job['name'] ?? '-' }}
-                                </a>
+                                <div class="flex items-center gap-2">
+                                    <a
+                                        href="{{ route('dawn.failed.show', ['id' => $job['id'] ?? '']) }}"
+                                        wire:navigate
+                                        class="text-sm font-medium text-dawn-600 dark:text-dawn-400 hover:text-dawn-700 dark:hover:text-dawn-300"
+                                    >
+                                        {{ $job['class'] ?? $job['name'] ?? '-' }}
+                                    </a>
+                                    @if(($job['status'] ?? '') === 'retried')
+                                        <x-dawn::job-status-badge status="retried" />
+                                    @endif
+                                </div>
                             </td>
                             <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono text-xs">{{ $job['id'] ?? '-' }}</td>
                             <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ $this->formatDate($job['failed_at'] ?? null) }}</td>
                             <td class="px-3 sm:px-6 py-4 text-sm text-red-600 dark:text-red-400 truncate max-w-xs">{{ $job['error'] ?? $job['exception'] ?? '-' }}</td>
                             <td class="px-3 sm:px-6 py-4 text-right">
-                                <button
-                                    wire:click="retry('{{ $job['id'] ?? '' }}')"
-                                    class="text-sm text-dawn-600 dark:text-dawn-400 hover:text-dawn-700 dark:hover:text-dawn-300 font-medium"
-                                >
-                                    Retry
-                                </button>
+                                @if(($job['status'] ?? '') !== 'retried')
+                                    <button
+                                        wire:click="retry('{{ $job['id'] ?? '' }}')"
+                                        class="text-sm text-dawn-600 dark:text-dawn-400 hover:text-dawn-700 dark:hover:text-dawn-300 font-medium"
+                                    >
+                                        Retry
+                                    </button>
+                                @endif
                             </td>
                         </tr>
                     @endforeach
                 </tbody>
             </table>
             </div>
+            <x-dawn::pagination :page="$page" :totalPages="$totalPages" :total="$total" :from="$from" :to="$to" />
         @else
             <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                 No failed jobs.

@@ -24,15 +24,20 @@ class Show extends Component
     public function retry(): void
     {
         app(JobRepository::class)->retry($this->jobId);
-
-        $this->redirect(route('dawn.failed'), navigate: true);
     }
 
     public function render()
     {
-        $job = app(JobRepository::class)->findFailed($this->jobId);
+        $repo = app(JobRepository::class);
+        $job = $repo->findFailed($this->jobId);
 
         abort_unless($job, 404);
+
+        // Merge status from dawn:job:{id} to show retried badge
+        $jobStatus = $repo->find($this->jobId);
+        if ($jobStatus) {
+            $job['status'] = $jobStatus['status'] ?? 'failed';
+        }
 
         $exception = null;
         $frames = [];

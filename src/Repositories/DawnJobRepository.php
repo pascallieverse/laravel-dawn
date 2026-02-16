@@ -84,16 +84,55 @@ class DawnJobRepository implements JobRepository
             return;
         }
 
-        // Re-push the job payload to the queue
+        // Skip already-retried jobs
+        $job = $this->find($id);
+        if ($job && ($job['status'] ?? '') === 'retried') {
+            return;
+        }
+
         $queue = $failed['queue'] ?? 'default';
         $payload = $failed['payload'] ?? [];
 
         if (! empty($payload)) {
-            $encoded = json_encode(array_merge($payload, ['attempts' => 0]));
-            $this->connection()->rpush('queues:' . $queue, [$encoded]);
-        }
+            // Create a NEW job with a fresh UUID for the retry
+            $newUuid = (string) \Illuminate\Support\Str::uuid();
+            $newId = 'dawn-' . $newUuid;
 
-        $this->deleteFailed($id);
+            $payload['uuid'] = $newUuid;
+            $payload['id'] = $newId;
+            $payload['attempts'] = 0;
+
+            $encoded = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+
+            if ($encoded !== false) {
+                $this->connection()->rpush('queues:' . $queue, [$encoded]);
+            }
+
+            // Mark the OLD failed job as "retried" (keep it visible in the list)
+            $retriedJob = json_encode([
+                'id' => $id,
+                'uuid' => $failed['uuid'] ?? '',
+                'name' => $failed['name'] ?? $failed['class'] ?? 'Unknown',
+                'class' => $failed['class'] ?? $failed['name'] ?? 'Unknown',
+                'status' => 'retried',
+                'queue' => $queue,
+                'tags' => $failed['tags'] ?? [],
+                'failed_at' => $failed['failed_at'] ?? null,
+                'exception' => $failed['exception'] ?? null,
+                'retried_at' => now()->timestamp,
+                'retried_by' => $newId,
+            ]);
+            $this->connection()->setex($this->prefix . 'job:' . $id, 604800, $retriedJob);
+
+            // Update the failed detail to include retry info (keep for history)
+            $failed['retried_at'] = now()->timestamp;
+            $failed['retried_by'] = $newId;
+            $this->connection()->setex(
+                $this->prefix . 'failed:' . $id,
+                604800,
+                json_encode($failed, JSON_INVALID_UTF8_SUBSTITUTE)
+            );
+        }
     }
 
     public function retryAll(): void
@@ -101,8 +140,24 @@ class DawnJobRepository implements JobRepository
         $ids = $this->connection()->zrange($this->prefix . 'failed_jobs', 0, -1);
 
         foreach ($ids as $id) {
+            // retry() already skips retried jobs internally
             $this->retry($id);
         }
+    }
+
+    public function countFailedPending(): int
+    {
+        $ids = $this->connection()->zrange($this->prefix . 'failed_jobs', 0, -1);
+        $count = 0;
+
+        foreach ($ids as $id) {
+            $job = $this->find($id);
+            if ($job && ($job['status'] ?? '') !== 'retried') {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     public function countRecent(): int
@@ -122,21 +177,47 @@ class DawnJobRepository implements JobRepository
 
     /**
      * Get jobs from a sorted set, reverse ordered (newest first).
+     * Over-fetches from the ZSET to compensate for entries whose detail
+     * keys (dawn:job:{id}) have expired. For failed job sets, falls back
+     * to dawn:failed:{id} which has a longer TTL.
      */
     protected function getJobsFromSortedSet(string $key, int $offset, int $limit): array
     {
-        $ids = $this->connection()->zrevrange(
-            $this->prefix . $key,
-            $offset,
-            $offset + $limit - 1,
-        );
-
+        $fullKey = $this->prefix . $key;
+        $isFailedSet = in_array($key, ['failed_jobs', 'recent_failed_jobs']);
         $jobs = [];
-        foreach ($ids as $id) {
-            $job = $this->find($id);
-            if ($job) {
-                $jobs[] = $job;
+        $cursor = $offset;
+        $batchSize = $limit;
+        $maxPasses = 3;
+
+        for ($pass = 0; $pass < $maxPasses && count($jobs) < $limit; $pass++) {
+            $ids = $this->connection()->zrevrange($fullKey, $cursor, $cursor + $batchSize - 1);
+
+            if (empty($ids)) {
+                break;
             }
+
+            foreach ($ids as $id) {
+                $job = $this->find($id);
+
+                // For failed job sets, fall back to dawn:failed:{id} (7d TTL)
+                // when dawn:job:{id} (24h TTL) has expired
+                if (! $job && $isFailedSet) {
+                    $job = $this->findFailed($id);
+                    if ($job) {
+                        $job['status'] = $job['status'] ?? 'failed';
+                    }
+                }
+
+                if ($job) {
+                    $jobs[] = $job;
+                    if (count($jobs) >= $limit) {
+                        break;
+                    }
+                }
+            }
+
+            $cursor += $batchSize;
         }
 
         return $jobs;

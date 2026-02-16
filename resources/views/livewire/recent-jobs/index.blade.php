@@ -138,6 +138,7 @@
                 </tbody>
             </table>
             </div>
+            <x-dawn::pagination :page="$page" :totalPages="$totalPages" :total="$total" :from="$from" :to="$to" />
         @else
             <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                 No {{ $activeTab }} jobs found.

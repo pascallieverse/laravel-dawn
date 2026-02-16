@@ -14,6 +14,10 @@ class Index extends Component
 {
     use FormatsValues;
 
+    public int $page = 1;
+
+    public int $perPage = 50;
+
     public function retry(string $id): void
     {
         app(JobRepository::class)->retry($id);
@@ -24,13 +28,43 @@ class Index extends Component
         app(JobRepository::class)->retryAll();
     }
 
+    public function previousPage(): void
+    {
+        $this->page = max(1, $this->page - 1);
+    }
+
+    public function nextPage(): void
+    {
+        $this->page++;
+    }
+
+    public function goToPage(int $page): void
+    {
+        $this->page = max(1, $page);
+    }
+
     public function render()
     {
         $jobRepo = app(JobRepository::class);
+        $offset = ($this->page - 1) * $this->perPage;
+        $total = $jobRepo->countFailed();
+        $totalPages = max(1, (int) ceil($total / $this->perPage));
+
+        if ($this->page > $totalPages) {
+            $this->page = $totalPages;
+        }
+
+        $jobs = $jobRepo->getFailed($offset, $this->perPage);
+
+        $from = $total > 0 ? $offset + 1 : 0;
+        $to = min($offset + count($jobs), $total);
 
         return view('dawn::livewire.failed-jobs.index', [
-            'jobs' => $jobRepo->getFailed(),
-            'total' => $jobRepo->countFailed(),
+            'jobs' => $jobs,
+            'total' => $total,
+            'totalPages' => $totalPages,
+            'from' => $from,
+            'to' => $to,
         ]);
     }
 }

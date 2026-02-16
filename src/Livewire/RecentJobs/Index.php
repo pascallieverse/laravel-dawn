@@ -20,6 +20,10 @@ class Index extends Component
 
     public string $activeTab = 'pending';
 
+    public int $page = 1;
+
+    public int $perPage = 50;
+
     public array $selected = [];
 
     public function mount(?string $type = null): void
@@ -31,7 +35,23 @@ class Index extends Component
     public function setTab(string $tab): void
     {
         $this->activeTab = $tab;
+        $this->page = 1;
         $this->selected = [];
+    }
+
+    public function previousPage(): void
+    {
+        $this->page = max(1, $this->page - 1);
+    }
+
+    public function nextPage(): void
+    {
+        $this->page++;
+    }
+
+    public function goToPage(int $page): void
+    {
+        $this->page = max(1, $page);
     }
 
     /**
@@ -75,8 +95,8 @@ class Index extends Component
     public function cancelSelected(): void
     {
         if ($this->activeTab === 'pending') {
-            $jobs = $this->getPendingFromQueues();
-            foreach ($jobs as $job) {
+            $allPending = $this->getPendingFromQueues(0, 1000);
+            foreach ($allPending as $job) {
                 if (in_array($job['id'], $this->selected)) {
                     $this->cancelPendingJob($job['id'], $job['queue']);
                 }
@@ -133,7 +153,7 @@ class Index extends Component
         $commands = app(CommandQueue::class);
         $masters = app(MasterSupervisorRepository::class);
 
-        $processingJobs = $jobRepo->getPending();
+        $processingJobs = $jobRepo->getPending(0, 500);
         $masterNames = $masters->names();
 
         foreach ($processingJobs as $job) {
@@ -151,26 +171,48 @@ class Index extends Component
     public function render()
     {
         $jobRepo = app(JobRepository::class);
+        $offset = ($this->page - 1) * $this->perPage;
 
         $jobs = match ($this->activeTab) {
-            'pending' => $this->getPendingFromQueues(),
-            'processing' => $jobRepo->getPending(),
-            'completed' => $jobRepo->getCompleted(),
-            'failed' => $jobRepo->getFailed(),
-            'silenced' => $jobRepo->getSilenced(),
+            'pending' => $this->getPendingFromQueues($offset, $this->perPage),
+            'processing' => $jobRepo->getPending($offset, $this->perPage),
+            'completed' => $jobRepo->getCompleted($offset, $this->perPage),
+            'failed' => $jobRepo->getFailed($offset, $this->perPage),
+            'silenced' => $jobRepo->getSilenced($offset, $this->perPage),
             default => [],
         };
 
+        $total = match ($this->activeTab) {
+            'pending' => $this->countPendingInQueues(),
+            'processing' => (int) $jobRepo->countRecent(),
+            'completed' => $jobRepo->countCompleted(),
+            'failed' => $jobRepo->countFailed(),
+            'silenced' => 0,
+            default => 0,
+        };
+
+        $totalPages = max(1, (int) ceil($total / $this->perPage));
+
+        if ($this->page > $totalPages) {
+            $this->page = $totalPages;
+        }
+
+        $from = $total > 0 ? $offset + 1 : 0;
+        $to = min($offset + count($jobs), $total);
+
         return view('dawn::livewire.recent-jobs.index', [
             'jobs' => $jobs,
+            'total' => $total,
+            'totalPages' => $totalPages,
+            'from' => $from,
+            'to' => $to,
         ]);
     }
 
     /**
      * Read jobs waiting in queue lists (not yet picked up by Rust).
-     * These are raw payloads in queues:{queue} Redis lists.
      */
-    protected function getPendingFromQueues(): array
+    protected function getPendingFromQueues(int $offset = 0, int $limit = 50): array
     {
         $redis = app(RedisFactory::class)->connection('dawn');
         $supervisors = app(SupervisorRepository::class)->all();
@@ -186,15 +228,15 @@ class Index extends Component
             $queues['default'] = true;
         }
 
-        $jobs = [];
+        $allJobs = [];
         foreach (array_keys($queues) as $queue) {
-            $raw = $redis->lrange('queues:' . $queue, 0, 49);
+            $raw = $redis->lrange('queues:' . $queue, 0, -1);
             foreach ($raw as $payload) {
                 $data = json_decode($payload, true);
                 if (! $data) {
                     continue;
                 }
-                $jobs[] = [
+                $allJobs[] = [
                     'id' => $data['id'] ?? $data['uuid'] ?? '-',
                     'name' => $data['displayName'] ?? $data['job'] ?? 'Unknown',
                     'queue' => $queue,
@@ -205,6 +247,33 @@ class Index extends Component
             }
         }
 
-        return $jobs;
+        return array_slice($allJobs, $offset, $limit);
+    }
+
+    /**
+     * Count total pending jobs across all queue lists.
+     */
+    protected function countPendingInQueues(): int
+    {
+        $redis = app(RedisFactory::class)->connection('dawn');
+        $supervisors = app(SupervisorRepository::class)->all();
+
+        $queues = [];
+        foreach ($supervisors as $supervisor) {
+            foreach (($supervisor['queues'] ?? []) as $queue) {
+                $queues[$queue] = true;
+            }
+        }
+
+        if (empty($queues)) {
+            $queues['default'] = true;
+        }
+
+        $total = 0;
+        foreach (array_keys($queues) as $queue) {
+            $total += (int) $redis->llen('queues:' . $queue);
+        }
+
+        return $total;
     }
 }

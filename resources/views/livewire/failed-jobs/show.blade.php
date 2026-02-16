@@ -13,15 +13,24 @@
                 {{ $job['class'] ?? $job['name'] ?? 'Failed Job' }}
             </h1>
         </div>
-        <button
-            wire:click="retry"
-            class="self-start shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-dawn-500 hover:bg-dawn-600 text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-dawn-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
-        >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-            </svg>
-            Retry Job
-        </button>
+        @if(($job['status'] ?? '') === 'retried')
+            <span class="self-start shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-sm font-medium rounded-lg">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                </svg>
+                Retried
+            </span>
+        @else
+            <button
+                wire:click="retry"
+                class="self-start shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-dawn-500 hover:bg-dawn-600 text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-dawn-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+            >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                </svg>
+                Retry Job
+            </button>
+        @endif
     </div>
 
     {{-- Job Info Card --}}
