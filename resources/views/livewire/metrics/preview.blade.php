@@ -1,4 +1,4 @@
-<div>
+<div wire:poll.10s>
     <div class="mb-6">
         <a href="{{ route($type === 'jobs' ? 'dawn.metrics.jobs' : 'dawn.metrics.queues') }}" wire:navigate class="text-sm text-dawn-600 dark:text-dawn-400 hover:text-dawn-700 dark:hover:text-dawn-300">
             &larr; Back to {{ $type === 'jobs' ? 'Job' : 'Queue' }} Metrics

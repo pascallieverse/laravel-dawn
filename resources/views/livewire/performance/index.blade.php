@@ -1,9 +1,9 @@
-<div>
+<div wire:poll.10s>
     <h1 class="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-6">Performance</h1>
 
     {{-- Aggregate Throughput --}}
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm p-4 sm:p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Throughput (Jobs / Snapshot)</h2>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Throughput (Jobs / Hour)</h2>
 
         <div
             wire:ignore
@@ -54,7 +54,7 @@ function dawnGridColor() {
 function dawnTickColor() {
     return document.documentElement.classList.contains('dark') ? '#9ca3af' : '#6b7280';
 }
-function formatTimestamp(ts) {
+function formatHourLabel(ts) {
     const d = new Date((ts || 0) * 1000);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -64,19 +64,16 @@ Alpine.data('dawnThroughputChart', (snapshots) => ({
     initChart() {
         const ctx = this.$refs.canvas.getContext('2d');
         this.chart = new Chart(ctx, {
-            type: 'line',
+            type: 'bar',
             data: {
-                labels: snapshots.map(s => formatTimestamp(s.timestamp)),
+                labels: snapshots.map(s => formatHourLabel(s.timestamp)),
                 datasets: [{
-                    label: 'Throughput',
+                    label: 'Jobs',
                     data: snapshots.map(s => s.count),
+                    backgroundColor: 'rgba(245, 158, 11, 0.7)',
                     borderColor: '#f59e0b',
-                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 0,
-                    pointHitRadius: 10,
+                    borderWidth: 1,
+                    borderRadius: 4,
                 }],
             },
             options: {
@@ -92,7 +89,7 @@ Alpine.data('dawnThroughputChart', (snapshots) => ({
                     y: {
                         beginAtZero: true,
                         grid: { color: dawnGridColor() },
-                        ticks: { color: dawnTickColor() },
+                        ticks: { color: dawnTickColor(), stepSize: 1 },
                     },
                 },
             },
@@ -105,19 +102,16 @@ Alpine.data('dawnRuntimeChart', (snapshots) => ({
     initChart() {
         const ctx = this.$refs.canvas.getContext('2d');
         this.chart = new Chart(ctx, {
-            type: 'line',
+            type: 'bar',
             data: {
-                labels: snapshots.map(s => formatTimestamp(s.timestamp)),
+                labels: snapshots.map(s => formatHourLabel(s.timestamp)),
                 datasets: [{
                     label: 'Avg Runtime (ms)',
                     data: snapshots.map(s => s.avg_runtime),
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
                     borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 0,
-                    pointHitRadius: 10,
+                    borderWidth: 1,
+                    borderRadius: 4,
                 }],
             },
             options: {
@@ -151,7 +145,7 @@ Alpine.data('dawnPerQueueChart', (queueData) => ({
         const allTimestamps = new Set();
         queues.forEach(q => queueData[q].forEach(s => allTimestamps.add(s.timestamp)));
         const sortedTimestamps = [...allTimestamps].sort((a, b) => a - b);
-        const labels = sortedTimestamps.map(ts => formatTimestamp(ts));
+        const labels = sortedTimestamps.map(ts => formatHourLabel(ts));
 
         // Build one dataset per queue
         const datasets = queues.map((queue, i) => {
@@ -160,17 +154,15 @@ Alpine.data('dawnPerQueueChart', (queueData) => ({
             return {
                 label: queue,
                 data: sortedTimestamps.map(ts => byTs[ts] ?? 0),
+                backgroundColor: dawnChartColors[i % dawnChartColors.length] + 'b3',
                 borderColor: dawnChartColors[i % dawnChartColors.length],
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHitRadius: 10,
+                borderWidth: 1,
+                borderRadius: 4,
             };
         });
 
         this.chart = new Chart(ctx, {
-            type: 'line',
+            type: 'bar',
             data: { labels, datasets },
             options: {
                 responsive: true,
@@ -179,9 +171,7 @@ Alpine.data('dawnPerQueueChart', (queueData) => ({
                 plugins: {
                     legend: {
                         display: queues.length > 0,
-                        labels: {
-                            color: dawnTickColor(),
-                        },
+                        labels: { color: dawnTickColor() },
                     },
                 },
                 scales: {
@@ -192,7 +182,7 @@ Alpine.data('dawnPerQueueChart', (queueData) => ({
                     y: {
                         beginAtZero: true,
                         grid: { color: dawnGridColor() },
-                        ticks: { color: dawnTickColor() },
+                        ticks: { color: dawnTickColor(), stepSize: 1 },
                     },
                 },
             },

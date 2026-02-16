@@ -1,4 +1,4 @@
-<div>
+<div wire:poll.3s>
     {{-- Header --}}
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
         <div class="min-w-0">

@@ -1,4 +1,4 @@
-<div>
+<div wire:poll.5s>
     <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Monitoring</h1>
 
     {{-- Add Tag Form --}}

@@ -184,7 +184,7 @@ class Index extends Component
 
         $total = match ($this->activeTab) {
             'pending' => $this->countPendingInQueues(),
-            'processing' => (int) $jobRepo->countRecent(),
+            'processing' => $jobRepo->countPending(),
             'completed' => $jobRepo->countCompleted(),
             'failed' => $jobRepo->countFailed(),
             'silenced' => 0,

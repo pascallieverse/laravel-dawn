@@ -12,82 +12,61 @@ class Index extends Component
     public function render()
     {
         $metricsRepo = app(MetricsRepository::class);
-        $queues = $metricsRepo->measuredQueues();
 
-        // Collect all snapshots keyed by queue.
-        // Snapshots contain cumulative count/total_runtime, so we must
-        // compute deltas between consecutive snapshots for throughput.
-        $snapshotsByQueue = [];
-        foreach ($queues as $queue) {
-            $snapshotsByQueue[$queue] = $metricsRepo->snapshotsForQueue($queue);
-        }
+        // Per-minute throughput from dawn:throughput:{minute} keys (last 60 min)
+        $throughputByQueue = $metricsRepo->getRecentThroughput(60);
 
-        // Convert each queue's cumulative snapshots to per-interval deltas
-        $deltasByQueue = [];
-        foreach ($snapshotsByQueue as $queue => $snapshots) {
-            $deltas = [];
-            $prev = null;
-            foreach ($snapshots as $snapshot) {
-                $count = (int) ($snapshot['count'] ?? 0);
-                $runtime = (int) ($snapshot['total_runtime'] ?? 0);
-                $ts = $snapshot['timestamp'] ?? 0;
-
-                if ($prev !== null) {
-                    $deltaCount = max(0, $count - $prev['count']);
-                    $deltaRuntime = max(0, $runtime - $prev['total_runtime']);
-                    $deltas[] = [
-                        'timestamp' => $ts,
-                        'count' => $deltaCount,
-                        'total_runtime' => $deltaRuntime,
-                    ];
+        // Group per-minute data into 1-hour blocks
+        $hourlyByQueue = [];
+        foreach ($throughputByQueue as $queue => $points) {
+            foreach ($points as $point) {
+                $hourTs = (int) (floor($point['timestamp'] / 3600) * 3600);
+                if (! isset($hourlyByQueue[$queue][$hourTs])) {
+                    $hourlyByQueue[$queue][$hourTs] = ['count' => 0, 'runtime' => 0];
                 }
-
-                $prev = ['count' => $count, 'total_runtime' => $runtime];
-            }
-            $deltasByQueue[$queue] = $deltas;
-        }
-
-        // Aggregate deltas by timestamp across all queues
-        $aggregateByTimestamp = [];
-        foreach ($deltasByQueue as $queue => $deltas) {
-            foreach ($deltas as $delta) {
-                $ts = $delta['timestamp'];
-                if (! isset($aggregateByTimestamp[$ts])) {
-                    $aggregateByTimestamp[$ts] = ['count' => 0, 'total_runtime' => 0];
-                }
-                $aggregateByTimestamp[$ts]['count'] += $delta['count'];
-                $aggregateByTimestamp[$ts]['total_runtime'] += $delta['total_runtime'];
+                $hourlyByQueue[$queue][$hourTs]['count'] += $point['count'];
+                $hourlyByQueue[$queue][$hourTs]['runtime'] += $point['runtime'];
             }
         }
-        ksort($aggregateByTimestamp);
 
-        // Build aggregate throughput dataset: [{timestamp, count}]
+        // Aggregate across all queues by hour
+        $aggregateByHour = [];
+        foreach ($hourlyByQueue as $queue => $hours) {
+            foreach ($hours as $hourTs => $data) {
+                if (! isset($aggregateByHour[$hourTs])) {
+                    $aggregateByHour[$hourTs] = ['count' => 0, 'runtime' => 0];
+                }
+                $aggregateByHour[$hourTs]['count'] += $data['count'];
+                $aggregateByHour[$hourTs]['runtime'] += $data['runtime'];
+            }
+        }
+        ksort($aggregateByHour);
+
+        // Build aggregate throughput: [{timestamp, count}]
         $aggregateThroughput = [];
-        foreach ($aggregateByTimestamp as $ts => $data) {
-            $aggregateThroughput[] = [
-                'timestamp' => $ts,
-                'count' => $data['count'],
-            ];
+        foreach ($aggregateByHour as $ts => $data) {
+            $aggregateThroughput[] = ['timestamp' => $ts, 'count' => $data['count']];
         }
 
-        // Build aggregate runtime dataset: [{timestamp, avg_runtime}]
+        // Build aggregate runtime: [{timestamp, avg_runtime}]
         $aggregateRuntime = [];
-        foreach ($aggregateByTimestamp as $ts => $data) {
+        foreach ($aggregateByHour as $ts => $data) {
             $aggregateRuntime[] = [
                 'timestamp' => $ts,
                 'avg_runtime' => $data['count'] > 0
-                    ? round($data['total_runtime'] / $data['count'])
+                    ? round($data['runtime'] / $data['count'])
                     : 0,
             ];
         }
 
-        // Build per-queue throughput from deltas: {queue: [{timestamp, count}]}
+        // Per-queue throughput (hourly): {queue: [{timestamp, count}]}
         $perQueueThroughput = [];
-        foreach ($deltasByQueue as $queue => $deltas) {
-            $perQueueThroughput[$queue] = array_map(fn ($d) => [
-                'timestamp' => $d['timestamp'],
-                'count' => $d['count'],
-            ], $deltas);
+        foreach ($hourlyByQueue as $queue => $hours) {
+            ksort($hours);
+            $perQueueThroughput[$queue] = [];
+            foreach ($hours as $ts => $data) {
+                $perQueueThroughput[$queue][] = ['timestamp' => $ts, 'count' => $data['count']];
+            }
         }
 
         return view('dawn::livewire.performance.index', [

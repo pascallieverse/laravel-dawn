@@ -33,4 +33,10 @@ interface MetricsRepository
      * Get queue metric snapshots.
      */
     public function snapshotsForQueue(string $queue): array;
+
+    /**
+     * Get per-minute throughput data for the last N minutes.
+     * Returns: [queue => [{timestamp, count, runtime}]]
+     */
+    public function getRecentThroughput(int $minutes = 60): array;
 }

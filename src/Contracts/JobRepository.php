@@ -65,6 +65,11 @@ interface JobRepository
     public function countRecent(): int;
 
     /**
+     * Count pending/processing jobs (reserved by Rust).
+     */
+    public function countPending(): int;
+
+    /**
      * Count completed jobs.
      */
     public function countCompleted(): int;

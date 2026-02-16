@@ -34,7 +34,6 @@ class ExportConfigCommand extends Command
             ],
             'trim' => [
                 'recent' => $config['trim']['recent'] ?? 60,
-                'pending' => $config['trim']['pending'] ?? 60,
                 'completed' => $config['trim']['completed'] ?? 60,
                 'failed' => $config['trim']['recent_failed'] ?? 10080,
                 'monitored' => $config['trim']['monitored'] ?? 10080,

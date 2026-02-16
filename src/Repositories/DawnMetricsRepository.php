@@ -91,4 +91,53 @@ class DawnMetricsRepository implements MetricsRepository
 
         return array_map(fn ($item) => json_decode($item, true), $raw);
     }
+
+    /**
+     * Get per-minute throughput data for the last N minutes.
+     * Returns: [queue => [{timestamp, count, runtime}]]
+     *
+     * Reads from dawn:throughput:{YYYYMMDDHHmm} hash keys written by Rust.
+     * Each hash has fields: {queue} => count, {queue}:runtime => total_runtime_ms.
+     */
+    public function getRecentThroughput(int $minutes = 60): array
+    {
+        $conn = $this->connection();
+        $now = time();
+        $result = [];
+
+        for ($i = $minutes - 1; $i >= 0; $i--) {
+            $ts = $now - ($i * 60);
+            $minuteKey = date('YmdHi', $ts);
+            $throughputKey = $this->prefix . 'throughput:' . $minuteKey;
+
+            $data = $conn->hgetall($throughputKey);
+
+            if (empty($data)) {
+                continue;
+            }
+
+            // Parse fields: "default" => count, "default:runtime" => ms
+            foreach ($data as $field => $value) {
+                if (str_ends_with($field, ':runtime')) {
+                    continue; // handled alongside the count field
+                }
+
+                $queue = $field;
+                $count = (int) $value;
+                $runtime = (int) ($data[$queue . ':runtime'] ?? 0);
+
+                if (! isset($result[$queue])) {
+                    $result[$queue] = [];
+                }
+
+                $result[$queue][] = [
+                    'timestamp' => $ts,
+                    'count' => $count,
+                    'runtime' => $runtime,
+                ];
+            }
+        }
+
+        return $result;
+    }
 }

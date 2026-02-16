@@ -1,4 +1,4 @@
-<div wire:poll.5s>
+<div wire:poll.3s>
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Failed Jobs</h1>
         @if($total > 0)

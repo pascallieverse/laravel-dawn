@@ -111,11 +111,15 @@ class DawnJobRepository implements JobRepository
             if ($encoded !== false) {
                 $conn = $this->connection();
 
-                // Push the new job to the queue
+                // Push the new job to the queue. It will appear in the
+                // "pending" tab immediately (reads directly from queue lists).
+                // When Rust picks it up, it adds it to pending_jobs/recent_jobs
+                // ZSETs with status "reserved".
                 $conn->rpush('queues:' . $queue, [$encoded]);
 
-                // Register the new job in dashboard ZSETs so it's visible
-                // immediately (before Rust picks it up)
+                // Pre-register in recent_jobs so it's visible in the
+                // dashboard's recent jobs list. Do NOT add to pending_jobs —
+                // that ZSET is managed by Rust for reserved (processing) jobs.
                 $newJobData = json_encode([
                     'id' => $newId,
                     'uuid' => $newUuid,
@@ -130,7 +134,6 @@ class DawnJobRepository implements JobRepository
                 ]);
                 $conn->setex($this->prefix . 'job:' . $newId, 86400, $newJobData);
                 $conn->zadd($this->prefix . 'recent_jobs', $now, $newId);
-                $conn->zadd($this->prefix . 'pending_jobs', $now, $newId);
             }
 
             // Mark the OLD failed job as "retried" (keep it visible in the list)
@@ -188,6 +191,11 @@ class DawnJobRepository implements JobRepository
     public function countRecent(): int
     {
         return (int) $this->connection()->zcard($this->prefix . 'recent_jobs');
+    }
+
+    public function countPending(): int
+    {
+        return (int) $this->connection()->zcard($this->prefix . 'pending_jobs');
     }
 
     public function countCompleted(): int

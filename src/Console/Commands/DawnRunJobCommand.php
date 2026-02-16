@@ -36,12 +36,15 @@ class DawnRunJobCommand extends Command
             return 1;
         }
 
+        $startTime = hrtime(true);
+
         try {
             $command = unserialize($payload['data']['command']);
             app()->call([$command, 'handle']);
 
             $result = [
                 'status' => 'complete',
+                'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
             ];
             fwrite(STDOUT, json_encode($result) . "\n");
             fflush(STDOUT);
@@ -52,6 +55,7 @@ class DawnRunJobCommand extends Command
                 'status' => 'failed',
                 'exception' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+                'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
             ];
             fwrite(STDOUT, json_encode($result) . "\n");
             fflush(STDOUT);

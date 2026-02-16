@@ -70,6 +70,7 @@ class DawnLoopCommand extends Command
     protected function processJob(string $rawPayload): array
     {
         $startMemory = memory_get_usage();
+        $startTime = hrtime(true);
 
         try {
             $payload = json_decode($rawPayload, true);
@@ -80,6 +81,7 @@ class DawnLoopCommand extends Command
                     'exception' => 'Invalid job payload: missing data.command',
                     'trace' => '',
                     'memory' => memory_get_usage() - $startMemory,
+                    'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
                 ];
             }
 
@@ -92,8 +94,11 @@ class DawnLoopCommand extends Command
             return [
                 'status' => 'complete',
                 'memory' => memory_get_usage() - $startMemory,
+                'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
             ];
         } catch (\Throwable $e) {
+            $runtimeMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
+
             // Log the failure via Laravel's logger
             $jobName = $payload['displayName'] ?? $payload['data']['commandName'] ?? 'Unknown';
             \Illuminate\Support\Facades\Log::error("[Dawn] Job failed: {$jobName}", [
@@ -113,6 +118,7 @@ class DawnLoopCommand extends Command
                 'exception' => $exceptionMsg,
                 'trace' => $trace,
                 'memory' => memory_get_usage() - $startMemory,
+                'runtime_ms' => $runtimeMs,
             ];
         }
     }
