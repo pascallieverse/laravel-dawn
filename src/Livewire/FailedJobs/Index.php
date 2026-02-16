@@ -20,7 +20,11 @@ class Index extends Component
 
     public function retry(string $id): void
     {
-        app(JobRepository::class)->retry($id);
+        $newId = app(JobRepository::class)->retry($id);
+
+        if ($newId) {
+            $this->redirect(route('dawn.jobs.show', $newId), navigate: true);
+        }
     }
 
     public function retryAll(): void

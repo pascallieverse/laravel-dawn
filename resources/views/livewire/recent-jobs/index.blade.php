@@ -65,7 +65,13 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Job</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Queue</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            @if($activeTab === 'pending')
+                                Date / Delayed Until
+                            @else
+                                Date
+                            @endif
+                        </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                             @if($activeTab === 'processing')
                                 Elapsed
@@ -101,10 +107,21 @@
                             <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ $job['queue'] ?? '-' }}</td>
                             <td class="px-6 py-4"><x-dawn::job-status-badge :status="$job['status'] ?? 'unknown'" /></td>
                             <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                {{ $this->formatDate($job['completed_at'] ?? $job['failed_at'] ?? $job['reserved_at'] ?? $job['pushed_at'] ?? null) }}
+                                @if(($job['status'] ?? '') === 'delayed' && isset($job['delayed_until']))
+                                    {{ $this->formatDate($job['delayed_until']) }}
+                                @else
+                                    {{ $this->formatDate($job['completed_at'] ?? $job['failed_at'] ?? $job['reserved_at'] ?? $job['pushed_at'] ?? null) }}
+                                @endif
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                                @if(($job['status'] ?? '') === 'reserved' && isset($job['reserved_at']))
+                                @if(($job['status'] ?? '') === 'delayed' && isset($job['delayed_until']))
+                                    @php $remaining = $job['delayed_until'] - now()->timestamp; @endphp
+                                    @if($remaining > 0)
+                                        {{ $this->formatRuntime($remaining * 1000) }}
+                                    @else
+                                        ready
+                                    @endif
+                                @elseif(($job['status'] ?? '') === 'reserved' && isset($job['reserved_at']))
                                     {{ $this->formatRuntime((now()->timestamp - $job['reserved_at']) * 1000) }}
                                 @elseif(($job['status'] ?? '') === 'pending' && isset($job['pushed_at']))
                                     {{ $this->formatRuntime((now()->timestamp - $job['pushed_at']) * 1000) }}

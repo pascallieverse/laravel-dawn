@@ -51,10 +51,11 @@ class Dashboard extends Component
             $pools = $supervisor['pools'] ?? [];
             foreach ($pools as $queue => $pool) {
                 $queueSize = (int) $redis->connection('dawn')->llen('queues:' . $queue);
-                $waitingInQueue += $queueSize;
+                $delayedSize = (int) $redis->connection('dawn')->zcard('queues:' . $queue . ':delayed');
+                $waitingInQueue += $queueSize + $delayedSize;
                 $workload[] = [
                     'queue' => $queue,
-                    'length' => $queueSize,
+                    'length' => $queueSize + $delayedSize,
                     'processes' => $pool['workers'] ?? 0,
                     'wait' => 0,
                 ];

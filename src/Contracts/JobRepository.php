@@ -50,9 +50,9 @@ interface JobRepository
     public function deleteFailed(string $id): void;
 
     /**
-     * Retry a failed job.
+     * Retry a failed job. Returns the new job ID, or null on failure.
      */
-    public function retry(string $id): void;
+    public function retry(string $id): ?string;
 
     /**
      * Retry all failed jobs.

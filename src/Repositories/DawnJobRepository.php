@@ -78,18 +78,18 @@ class DawnJobRepository implements JobRepository
         $conn->zrem($this->prefix . 'recent_failed_jobs', $id);
     }
 
-    public function retry(string $id): void
+    public function retry(string $id): ?string
     {
         $failed = $this->findFailed($id);
 
         if (! $failed) {
-            return;
+            return null;
         }
 
         // Skip already-retried jobs
         $job = $this->find($id);
         if ($job && ($job['status'] ?? '') === 'retried') {
-            return;
+            return null;
         }
 
         $queue = $failed['queue'] ?? 'default';
@@ -160,7 +160,11 @@ class DawnJobRepository implements JobRepository
                 604800,
                 json_encode($failed, JSON_INVALID_UTF8_SUBSTITUTE)
             );
+
+            return $newId;
         }
+
+        return null;
     }
 
     public function retryAll(): void

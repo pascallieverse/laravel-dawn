@@ -23,7 +23,11 @@ class Show extends Component
 
     public function retry(): void
     {
-        app(JobRepository::class)->retry($this->jobId);
+        $newId = app(JobRepository::class)->retry($this->jobId);
+
+        if ($newId) {
+            $this->redirect(route('dawn.jobs.show', $newId), navigate: true);
+        }
     }
 
     public function render()

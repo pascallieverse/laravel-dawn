@@ -215,21 +215,11 @@ class Index extends Component
     protected function getPendingFromQueues(int $offset = 0, int $limit = 50): array
     {
         $redis = app(RedisFactory::class)->connection('dawn');
-        $supervisors = app(SupervisorRepository::class)->all();
-
-        $queues = [];
-        foreach ($supervisors as $supervisor) {
-            foreach (($supervisor['queues'] ?? []) as $queue) {
-                $queues[$queue] = true;
-            }
-        }
-
-        if (empty($queues)) {
-            $queues['default'] = true;
-        }
+        $queueNames = $this->getQueueNames();
 
         $allJobs = [];
-        foreach (array_keys($queues) as $queue) {
+        foreach ($queueNames as $queue) {
+            // Ready jobs (in the queue list)
             $raw = $redis->lrange('queues:' . $queue, 0, -1);
             foreach ($raw as $payload) {
                 $data = json_decode($payload, true);
@@ -245,17 +235,53 @@ class Index extends Component
                     'runtime' => null,
                 ];
             }
+
+            // Delayed jobs (in the delayed sorted set)
+            $delayed = $redis->zrangebyscore('queues:' . $queue . ':delayed', '-inf', '+inf', ['withscores' => true]);
+            if (is_array($delayed)) {
+                foreach ($delayed as $payload => $score) {
+                    $data = json_decode($payload, true);
+                    if (! $data) {
+                        continue;
+                    }
+                    $allJobs[] = [
+                        'id' => $data['id'] ?? $data['uuid'] ?? '-',
+                        'name' => $data['displayName'] ?? $data['job'] ?? 'Unknown',
+                        'queue' => $queue,
+                        'status' => 'delayed',
+                        'pushed_at' => $data['pushedAt'] ?? null,
+                        'delayed_until' => (float) $score,
+                        'runtime' => null,
+                    ];
+                }
+            }
         }
 
         return array_slice($allJobs, $offset, $limit);
     }
 
     /**
-     * Count total pending jobs across all queue lists.
+     * Count total pending jobs across all queue lists (including delayed).
      */
     protected function countPendingInQueues(): int
     {
         $redis = app(RedisFactory::class)->connection('dawn');
+        $queueNames = $this->getQueueNames();
+
+        $total = 0;
+        foreach ($queueNames as $queue) {
+            $total += (int) $redis->llen('queues:' . $queue);
+            $total += (int) $redis->zcard('queues:' . $queue . ':delayed');
+        }
+
+        return $total;
+    }
+
+    /**
+     * Get all queue names from supervisor config, falling back to ['default'].
+     */
+    protected function getQueueNames(): array
+    {
         $supervisors = app(SupervisorRepository::class)->all();
 
         $queues = [];
@@ -269,11 +295,6 @@ class Index extends Component
             $queues['default'] = true;
         }
 
-        $total = 0;
-        foreach (array_keys($queues) as $queue) {
-            $total += (int) $redis->llen('queues:' . $queue);
-        }
-
-        return $total;
+        return array_keys($queues);
     }
 }
