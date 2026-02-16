@@ -16,6 +16,7 @@
                         <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Job</th>
                         <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID</th>
                         <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                        <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -24,6 +25,7 @@
                             <td class="px-3 sm:px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{{ $job['class'] ?? $job['name'] ?? '-' }}</td>
                             <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono">{{ $job['id'] ?? '-' }}</td>
                             <td class="px-3 sm:px-6 py-4"><x-dawn::job-status-badge :status="$job['status'] ?? 'unknown'" /></td>
+                            <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ $this->formatDate($job['completed_at'] ?? $job['failed_at'] ?? $job['reserved_at'] ?? $job['pushed_at'] ?? null) }}</td>
                         </tr>
                     @endforeach
                 </tbody>

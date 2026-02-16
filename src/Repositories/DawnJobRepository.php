@@ -58,6 +58,8 @@ class DawnJobRepository implements JobRepository
 
     public function getFailed(int $offset = 0, int $limit = 50): array
     {
+        $this->ensureFailedJobsIndexed();
+
         return $this->getJobsFromSortedSet('failed_jobs', $offset, $limit);
     }
 
@@ -97,15 +99,38 @@ class DawnJobRepository implements JobRepository
             // Create a NEW job with a fresh UUID for the retry
             $newUuid = (string) \Illuminate\Support\Str::uuid();
             $newId = 'dawn-' . $newUuid;
+            $now = now()->timestamp;
 
             $payload['uuid'] = $newUuid;
             $payload['id'] = $newId;
             $payload['attempts'] = 0;
+            $payload['pushedAt'] = (float) $now;
 
             $encoded = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
 
             if ($encoded !== false) {
-                $this->connection()->rpush('queues:' . $queue, [$encoded]);
+                $conn = $this->connection();
+
+                // Push the new job to the queue
+                $conn->rpush('queues:' . $queue, [$encoded]);
+
+                // Register the new job in dashboard ZSETs so it's visible
+                // immediately (before Rust picks it up)
+                $newJobData = json_encode([
+                    'id' => $newId,
+                    'uuid' => $newUuid,
+                    'name' => $payload['displayName'] ?? $failed['name'] ?? 'Unknown',
+                    'class' => $payload['displayName'] ?? $failed['class'] ?? 'Unknown',
+                    'status' => 'pending',
+                    'queue' => $queue,
+                    'tags' => $payload['tags'] ?? [],
+                    'pushed_at' => (float) $now,
+                    'attempts' => 0,
+                    'retried_from' => $id,
+                ]);
+                $conn->setex($this->prefix . 'job:' . $newId, 86400, $newJobData);
+                $conn->zadd($this->prefix . 'recent_jobs', $now, $newId);
+                $conn->zadd($this->prefix . 'pending_jobs', $now, $newId);
             }
 
             // Mark the OLD failed job as "retried" (keep it visible in the list)
@@ -119,13 +144,13 @@ class DawnJobRepository implements JobRepository
                 'tags' => $failed['tags'] ?? [],
                 'failed_at' => $failed['failed_at'] ?? null,
                 'exception' => $failed['exception'] ?? null,
-                'retried_at' => now()->timestamp,
+                'retried_at' => $now,
                 'retried_by' => $newId,
             ]);
             $this->connection()->setex($this->prefix . 'job:' . $id, 604800, $retriedJob);
 
             // Update the failed detail to include retry info (keep for history)
-            $failed['retried_at'] = now()->timestamp;
+            $failed['retried_at'] = $now;
             $failed['retried_by'] = $newId;
             $this->connection()->setex(
                 $this->prefix . 'failed:' . $id,
@@ -172,7 +197,53 @@ class DawnJobRepository implements JobRepository
 
     public function countFailed(): int
     {
+        $this->ensureFailedJobsIndexed();
+
         return (int) $this->connection()->zcard($this->prefix . 'failed_jobs');
+    }
+
+    /**
+     * Repair the failed_jobs ZSET by scanning recent_jobs for failed-status
+     * jobs that are missing from failed_jobs (e.g. removed by old cleanup code).
+     * Runs at most once per request.
+     */
+    protected bool $failedIndexRepaired = false;
+
+    protected function ensureFailedJobsIndexed(): void
+    {
+        if ($this->failedIndexRepaired) {
+            return;
+        }
+        $this->failedIndexRepaired = true;
+
+        $conn = $this->connection();
+        $failedKey = $this->prefix . 'failed_jobs';
+        $recentKey = $this->prefix . 'recent_jobs';
+
+        // Get all recent job IDs with their scores
+        $idsWithScores = $conn->zrevrange($recentKey, 0, 499, 'WITHSCORES');
+
+        if (empty($idsWithScores)) {
+            return;
+        }
+
+        foreach ($idsWithScores as $id => $score) {
+            // Check if already in failed_jobs
+            $rank = $conn->zrank($failedKey, $id);
+            if ($rank !== null && $rank !== false) {
+                continue;
+            }
+
+            // Check if this job has failed status
+            $job = $this->find($id);
+            if (! $job) {
+                $job = $this->findFailed($id);
+            }
+
+            if ($job && in_array($job['status'] ?? '', ['failed', 'retried'])) {
+                $conn->zadd($failedKey, $score, $id);
+            }
+        }
     }
 
     /**

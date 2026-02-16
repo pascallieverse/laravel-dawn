@@ -70,6 +70,9 @@ class Dashboard extends Component
                 'name' => class_basename($job['name'] ?? 'Unknown'),
                 'queue' => $job['queue'] ?? 'default',
                 'status' => 'processing',
+                'started_at' => isset($job['reserved_at'])
+                    ? $this->formatDate($job['reserved_at'])
+                    : '—',
                 'elapsed' => isset($job['reserved_at'])
                     ? $this->formatRuntime((now()->timestamp - $job['reserved_at']) * 1000)
                     : '—',
@@ -86,6 +89,7 @@ class Dashboard extends Component
                 'name' => class_basename($job['name'] ?? 'Unknown'),
                 'queue' => $job['queue'] ?? 'default',
                 'status' => $job['status'] ?? 'unknown',
+                'date' => $this->formatDate($job['completed_at'] ?? $job['failed_at'] ?? null),
                 'runtime' => isset($job['runtime'])
                     ? $this->formatRuntime($job['runtime'] * 1000)
                     : '—',
