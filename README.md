@@ -1,4 +1,12 @@
-# Dawn
+# Dawn (Experimantal)
+
+> [!WARNING]
+> **This project is experimantal**
+>
+> This project is mostly written by AI and still experimantal, everything should work but needs to be tested and improved further)
+> 
+
+
 
 A Rust-powered queue manager and dashboard for Laravel. Dawn replaces PHP as the queue worker — a compiled Rust binary pops jobs from Redis directly, delegates PHP execution via warm worker pools or isolated processes, and writes all metrics to Redis. A Livewire dashboard gives you real-time visibility into your queues.
 
