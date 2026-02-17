@@ -20,6 +20,8 @@ class Dashboard extends Component
 
     /**
      * Cancel a processing job from the dashboard.
+     * Sends a command to Rust AND force-removes from Redis directly
+     * so stuck/orphaned jobs are cleaned up even if Rust isn't running.
      */
     public function cancelProcessingJob(string $id): void
     {
@@ -29,6 +31,9 @@ class Dashboard extends Component
         foreach ($masters->names() as $master) {
             $commands->push($master, 'cancel-job', ['id' => $id]);
         }
+
+        // Force-remove from Redis in case Rust isn't running
+        app(JobRepository::class)->forceCancel($id);
     }
 
     public function render()
@@ -61,6 +66,46 @@ class Dashboard extends Component
                 ];
             }
         }
+
+        // Pending jobs: jobs waiting in queue lists + delayed sets
+        $pendingJobsList = collect();
+        $dawnConn = $redis->connection('dawn');
+        foreach ($allSupervisors as $supervisor) {
+            foreach (($supervisor['queues'] ?? []) as $queue) {
+                $raw = $dawnConn->lrange('queues:' . $queue, 0, 9);
+                foreach ($raw as $payload) {
+                    $data = json_decode($payload, true);
+                    if (! $data) continue;
+                    $pendingJobsList->push([
+                        'id' => $data['id'] ?? $data['uuid'] ?? '-',
+                        'name' => class_basename($data['displayName'] ?? $data['job'] ?? 'Unknown'),
+                        'queue' => $queue,
+                        'status' => 'pending',
+                        'pushed_at' => isset($data['pushedAt']) ? $this->formatDate($data['pushedAt']) : '—',
+                        'waiting' => isset($data['pushedAt'])
+                            ? $this->formatRuntime((now()->timestamp - $data['pushedAt']) * 1000)
+                            : '—',
+                    ]);
+                }
+                $delayed = $dawnConn->zrangebyscore('queues:' . $queue . ':delayed', '-inf', '+inf', ['withscores' => true, 'limit' => [0, 10]]);
+                if (is_array($delayed)) {
+                    foreach ($delayed as $payload => $score) {
+                        $data = json_decode($payload, true);
+                        if (! $data) continue;
+                        $remaining = (float) $score - now()->timestamp;
+                        $pendingJobsList->push([
+                            'id' => $data['id'] ?? $data['uuid'] ?? '-',
+                            'name' => class_basename($data['displayName'] ?? $data['job'] ?? 'Unknown'),
+                            'queue' => $queue,
+                            'status' => 'delayed',
+                            'pushed_at' => $this->formatDate((float) $score),
+                            'waiting' => $remaining > 0 ? $this->formatRuntime($remaining * 1000) : 'ready',
+                        ]);
+                    }
+                }
+            }
+        }
+        $pendingJobsList = $pendingJobsList->take(10)->values();
 
         // Processing jobs: jobs in pending_jobs with status 'reserved' (currently being executed by a worker)
         $pendingJobs = $jobs->getPending(0, 100);
@@ -107,6 +152,7 @@ class Dashboard extends Component
             'pendingJobsCount' => $waitingInQueue,
             'processingJobsCount' => $processingJobsList->count(),
             'workload' => $workload,
+            'pendingJobs' => $pendingJobsList,
             'processingJobs' => $processingJobsList,
             'recentJobs' => $recentJobsList,
         ]);

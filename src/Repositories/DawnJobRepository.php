@@ -214,6 +214,50 @@ class DawnJobRepository implements JobRepository
         return (int) $this->connection()->zcard($this->prefix . 'failed_jobs');
     }
 
+    public function forceCancel(string $id): void
+    {
+        $conn = $this->connection();
+        $now = now()->timestamp;
+
+        // Remove from pending_jobs ZSET
+        $conn->zrem($this->prefix . 'pending_jobs', $id);
+
+        // Update the job detail key to show as failed/cancelled
+        $existing = $this->find($id);
+        $jobData = json_encode([
+            'id' => $id,
+            'uuid' => $existing['uuid'] ?? '',
+            'name' => $existing['name'] ?? $existing['class'] ?? 'Unknown',
+            'class' => $existing['class'] ?? $existing['name'] ?? 'Unknown',
+            'status' => 'failed',
+            'queue' => $existing['queue'] ?? 'default',
+            'tags' => $existing['tags'] ?? [],
+            'failed_at' => $now,
+            'exception' => 'Manually cancelled from dashboard (job was stuck)',
+        ]);
+
+        $conn->setex($this->prefix . 'job:' . $id, 86400, $jobData);
+
+        // Add to failed_jobs ZSET so it shows up in the failed tab
+        $conn->zadd($this->prefix . 'failed_jobs', $now, $id);
+
+        // Store a failed detail record for the failed jobs show page
+        $failedDetail = json_encode([
+            'id' => $id,
+            'uuid' => $existing['uuid'] ?? '',
+            'name' => $existing['name'] ?? $existing['class'] ?? 'Unknown',
+            'class' => $existing['class'] ?? $existing['name'] ?? 'Unknown',
+            'queue' => $existing['queue'] ?? 'default',
+            'tags' => $existing['tags'] ?? [],
+            'failed_at' => $now,
+            'exception' => 'Manually cancelled from dashboard (job was stuck)',
+            'trace' => '',
+            'payload' => $existing['payload'] ?? [],
+        ]);
+
+        $conn->setex($this->prefix . 'failed:' . $id, 604800, $failedDetail);
+    }
+
     /**
      * Repair the failed_jobs ZSET by scanning recent_jobs for failed-status
      * jobs that are missing from failed_jobs (e.g. removed by old cleanup code).

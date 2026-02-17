@@ -18,7 +18,7 @@ class Index extends Component
 {
     use FormatsValues;
 
-    public string $activeTab = 'pending';
+    public string $activeTab = 'all';
 
     public int $page = 1;
 
@@ -28,8 +28,8 @@ class Index extends Component
 
     public function mount(?string $type = null): void
     {
-        $validTabs = ['pending', 'processing', 'completed', 'failed', 'silenced'];
-        $this->activeTab = in_array($type, $validTabs) ? $type : 'pending';
+        $validTabs = ['all', 'pending', 'processing', 'completed', 'failed', 'silenced'];
+        $this->activeTab = in_array($type, $validTabs) ? $type : 'all';
     }
 
     public function setTab(string $tab): void
@@ -75,7 +75,8 @@ class Index extends Component
     }
 
     /**
-     * Cancel a single processing job by sending a cancel command to Rust.
+     * Cancel a single processing job by sending a cancel command to Rust
+     * AND force-removing from Redis so stuck jobs are cleaned up immediately.
      */
     public function cancelProcessingJob(string $id): void
     {
@@ -85,6 +86,9 @@ class Index extends Component
         foreach ($masters->names() as $master) {
             $commands->push($master, 'cancel-job', ['id' => $id]);
         }
+
+        // Force-remove from Redis in case Rust isn't running
+        app(JobRepository::class)->forceCancel($id);
 
         $this->selected = array_values(array_diff($this->selected, [$id]));
     }
@@ -174,6 +178,7 @@ class Index extends Component
         $offset = ($this->page - 1) * $this->perPage;
 
         $jobs = match ($this->activeTab) {
+            'all' => $jobRepo->getRecent($offset, $this->perPage),
             'pending' => $this->getPendingFromQueues($offset, $this->perPage),
             'processing' => $jobRepo->getPending($offset, $this->perPage),
             'completed' => $jobRepo->getCompleted($offset, $this->perPage),
@@ -183,6 +188,7 @@ class Index extends Component
         };
 
         $total = match ($this->activeTab) {
+            'all' => $jobRepo->countRecent(),
             'pending' => $this->countPendingInQueues(),
             'processing' => $jobRepo->countPending(),
             'completed' => $jobRepo->countCompleted(),

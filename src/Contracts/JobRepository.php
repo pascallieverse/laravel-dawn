@@ -78,4 +78,10 @@ interface JobRepository
      * Count failed jobs.
      */
     public function countFailed(): int;
+
+    /**
+     * Force-delete a stuck processing job from the pending_jobs ZSET
+     * and mark it as failed. Used when Rust is not running.
+     */
+    public function forceCancel(string $id): void;
 }

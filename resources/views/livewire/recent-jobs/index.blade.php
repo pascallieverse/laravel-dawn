@@ -4,7 +4,7 @@
     {{-- Tabs --}}
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div class="flex space-x-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 overflow-x-auto">
-            @foreach(['pending', 'processing', 'completed', 'failed', 'silenced'] as $tab)
+            @foreach(['all', 'pending', 'processing', 'completed', 'failed', 'silenced'] as $tab)
                 <button
                     wire:click="setTab('{{ $tab }}')"
                     class="px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap {{ $activeTab === $tab ? 'bg-white dark:bg-gray-700 text-dawn-700 dark:text-dawn-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200' }}"
