@@ -101,29 +101,28 @@
         </div>
     @endif
 
-    {{-- Tabbed Exception / Logs (for failed jobs) --}}
-    @if($exception || !empty($frames) || !empty($logs))
-        <div x-data="{ tab: 'exception' }" class="mt-6 sm:mt-8">
-            {{-- Tab buttons --}}
-            <div class="border-b border-gray-200 dark:border-gray-700">
-                <nav class="flex gap-4 sm:gap-6 -mb-px overflow-x-auto" aria-label="Tabs">
-                    @if($exception || !empty($frames))
-                        <button @click="tab = 'exception'"
-                                :class="tab === 'exception' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'"
-                                class="whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors">
-                            Exception
-                        </button>
-                    @endif
+    {{-- Tabbed Exception / Logs --}}
+    <div x-data="{ tab: '{{ ($exception || !empty($frames)) ? 'exception' : 'logs' }}' }" class="mt-6 sm:mt-8">
+        {{-- Tab buttons --}}
+        <div class="border-b border-gray-200 dark:border-gray-700">
+            <nav class="flex gap-4 sm:gap-6 -mb-px overflow-x-auto" aria-label="Tabs">
+                @if($exception || !empty($frames))
+                    <button @click="tab = 'exception'"
+                            :class="tab === 'exception' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'"
+                            class="whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors">
+                        Exception
+                    </button>
+                @endif
+                <button @click="tab = 'logs'"
+                        :class="tab === 'logs' ? 'border-dawn-500 text-dawn-600 dark:text-dawn-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'"
+                        class="whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors">
+                    Laravel Log
                     @if(!empty($logs))
-                        <button @click="tab = 'logs'"
-                                :class="tab === 'logs' ? 'border-dawn-500 text-dawn-600 dark:text-dawn-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'"
-                                class="whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors">
-                            Laravel Log
-                            <span class="ml-1.5 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">{{ count($logs) }}</span>
-                        </button>
+                        <span class="ml-1.5 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">{{ count($logs) }}</span>
                     @endif
-                </nav>
-            </div>
+                </button>
+            </nav>
+        </div>
 
             {{-- Exception Tab --}}
             <div x-show="tab === 'exception'" x-cloak class="mt-5 sm:mt-6">
@@ -264,8 +263,8 @@
             </div>
 
             {{-- Logs Tab --}}
-            @if(!empty($logs))
-                <div x-show="tab === 'logs'" x-cloak class="mt-5 sm:mt-6">
+            <div x-show="tab === 'logs'" x-cloak class="mt-5 sm:mt-6">
+                @if(!empty($logs))
                     <div class="space-y-3">
                         @foreach($logs as $entry)
                             @php
@@ -289,8 +288,11 @@
                             </div>
                         @endforeach
                     </div>
-                </div>
-            @endif
+                @else
+                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-6 py-8 text-center">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">No log entries found around the time this job ran.</p>
+                    </div>
+                @endif
+            </div>
         </div>
-    @endif
 </div>

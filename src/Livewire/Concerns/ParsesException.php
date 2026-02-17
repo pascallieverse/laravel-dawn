@@ -127,6 +127,39 @@ trait ParsesException
     }
 
     /**
+     * Find the Laravel log file to read.
+     * Checks single log, daily log (by date), and the most recent log file.
+     */
+    protected function findLogFile(?float $timestamp): ?string
+    {
+        $logsDir = storage_path('logs');
+
+        // 1. Single channel: laravel.log
+        $single = $logsDir . '/laravel.log';
+        if (file_exists($single)) {
+            return $single;
+        }
+
+        // 2. Daily channel: laravel-YYYY-MM-DD.log matching the timestamp
+        if ($timestamp) {
+            $date = date('Y-m-d', (int) $timestamp);
+            $daily = $logsDir . '/laravel-' . $date . '.log';
+            if (file_exists($daily)) {
+                return $daily;
+            }
+        }
+
+        // 3. Fallback: most recent laravel-*.log file
+        $files = glob($logsDir . '/laravel-*.log');
+        if ($files) {
+            usort($files, fn ($a, $b) => filemtime($b) - filemtime($a));
+            return $files[0];
+        }
+
+        return null;
+    }
+
+    /**
      * Extract log entries from the Laravel log file around a timestamp.
      */
     protected function getLogsAroundTimestamp(?float $timestamp): array
@@ -135,9 +168,9 @@ trait ParsesException
             return [];
         }
 
-        $logPath = storage_path('logs/laravel.log');
+        $logPath = $this->findLogFile($timestamp);
 
-        if (! file_exists($logPath)) {
+        if (! $logPath || ! file_exists($logPath)) {
             return [];
         }
 
