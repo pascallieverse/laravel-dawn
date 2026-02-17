@@ -17,6 +17,7 @@ use Dawn\Repositories\DawnTagRepository;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 class DawnServiceProvider extends ServiceProvider
@@ -96,11 +97,27 @@ class DawnServiceProvider extends ServiceProvider
     }
 
     /**
+     * Resolve the Dawn Redis key prefix.
+     * When not explicitly configured, derives it from the application name.
+     */
+    public static function resolvePrefix(): string
+    {
+        $prefix = config('dawn.prefix');
+
+        if ($prefix === null || $prefix === '') {
+            $appName = Str::slug(config('app.name', 'laravel'), '_');
+            $prefix = $appName . '_dawn:';
+        }
+
+        return str_ends_with($prefix, ':') ? $prefix : $prefix . ':';
+    }
+
+    /**
      * Register the Dawn repository bindings.
      */
     protected function registerRepositories(): void
     {
-        $prefix = config('dawn.prefix', 'dawn:');
+        $prefix = static::resolvePrefix();
 
         $this->app->singleton(JobRepositoryContract::class, function ($app) use ($prefix) {
             return new DawnJobRepository($app->make('redis'), $prefix);
@@ -128,10 +145,12 @@ class DawnServiceProvider extends ServiceProvider
      */
     protected function registerCommandQueue(): void
     {
-        $this->app->singleton(CommandQueueContract::class, function ($app) {
+        $prefix = static::resolvePrefix();
+
+        $this->app->singleton(CommandQueueContract::class, function ($app) use ($prefix) {
             return new DawnCommandQueue(
                 $app->make('redis'),
-                config('dawn.prefix', 'dawn:'),
+                $prefix,
             );
         });
     }

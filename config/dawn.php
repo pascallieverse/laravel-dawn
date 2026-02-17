@@ -49,12 +49,13 @@ return [
     | Redis Prefix
     |--------------------------------------------------------------------------
     |
-    | Prefix for all Dawn keys in Redis. Change this if you run multiple
-    | applications on the same Redis server.
+    | Prefix for all Dawn keys in Redis. By default this is derived from
+    | your application name so multiple apps can share the same Redis
+    | server without key collisions.
     |
     */
 
-    'prefix' => env('DAWN_PREFIX', 'dawn:'),
+    'prefix' => env('DAWN_PREFIX', null),
 
     /*
     |--------------------------------------------------------------------------

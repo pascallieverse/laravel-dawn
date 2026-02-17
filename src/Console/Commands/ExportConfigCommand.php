@@ -2,6 +2,7 @@
 
 namespace Dawn\Console\Commands;
 
+use Dawn\DawnServiceProvider;
 use Illuminate\Console\Command;
 
 /**
@@ -22,7 +23,7 @@ class ExportConfigCommand extends Command
 
         $export = [
             'app_name' => config('app.name', 'Laravel'),
-            'prefix' => rtrim($config['prefix'] ?? 'dawn:', ':') . ':',
+            'prefix' => DawnServiceProvider::resolvePrefix(),
             'redis_url' => $this->resolveRedisUrl($config),
             'php_binary' => PHP_BINARY,
             'artisan_path' => base_path('artisan'),
