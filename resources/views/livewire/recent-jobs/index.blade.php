@@ -115,16 +115,11 @@
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                                 @if(($job['status'] ?? '') === 'delayed' && isset($job['delayed_until']))
-                                    @php $remaining = $job['delayed_until'] - now()->timestamp; @endphp
-                                    @if($remaining > 0)
-                                        {{ $this->formatRuntime($remaining * 1000) }}
-                                    @else
-                                        ready
-                                    @endif
+                                    <span x-data="dawnCountdown({{ (float) $job['delayed_until'] }})" x-text="display"></span>
                                 @elseif(($job['status'] ?? '') === 'reserved' && isset($job['reserved_at']))
-                                    {{ $this->formatRuntime((now()->timestamp - $job['reserved_at']) * 1000) }}
+                                    <span x-data="dawnElapsed({{ (float) $job['reserved_at'] }})" x-text="display"></span>
                                 @elseif(($job['status'] ?? '') === 'pending' && isset($job['pushed_at']))
-                                    {{ $this->formatRuntime((now()->timestamp - $job['pushed_at']) * 1000) }}
+                                    <span x-data="dawnElapsed({{ (float) $job['pushed_at'] }})" x-text="display"></span>
                                 @elseif(isset($job['runtime']))
                                     {{ $this->formatRuntime($job['runtime'] * 1000) }}
                                 @else

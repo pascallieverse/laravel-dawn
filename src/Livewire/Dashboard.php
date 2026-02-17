@@ -81,10 +81,7 @@ class Dashboard extends Component
                         'name' => class_basename($data['displayName'] ?? $data['job'] ?? 'Unknown'),
                         'queue' => $queue,
                         'status' => 'pending',
-                        'pushed_at' => isset($data['pushedAt']) ? $this->formatDate($data['pushedAt']) : '—',
-                        'waiting' => isset($data['pushedAt'])
-                            ? $this->formatRuntime((now()->timestamp - $data['pushedAt']) * 1000)
-                            : '—',
+                        'pushed_at' => isset($data['pushedAt']) ? (float) $data['pushedAt'] : null,
                     ]);
                 }
                 $delayed = $dawnConn->zrangebyscore('queues:' . $queue . ':delayed', '-inf', '+inf', ['withscores' => true, 'limit' => [0, 10]]);
@@ -98,8 +95,8 @@ class Dashboard extends Component
                             'name' => class_basename($data['displayName'] ?? $data['job'] ?? 'Unknown'),
                             'queue' => $queue,
                             'status' => 'delayed',
-                            'pushed_at' => $this->formatDate((float) $score),
-                            'waiting' => $remaining > 0 ? $this->formatRuntime($remaining * 1000) : 'ready',
+                            'delayed_until' => (float) $score,
+                            'pushed_at' => isset($data['pushedAt']) ? (float) $data['pushedAt'] : null,
                         ]);
                     }
                 }
@@ -116,12 +113,7 @@ class Dashboard extends Component
                 'name' => class_basename($job['name'] ?? 'Unknown'),
                 'queue' => $job['queue'] ?? 'default',
                 'status' => 'processing',
-                'started_at' => isset($job['reserved_at'])
-                    ? $this->formatDate($job['reserved_at'])
-                    : '—',
-                'elapsed' => isset($job['reserved_at'])
-                    ? $this->formatRuntime((now()->timestamp - $job['reserved_at']) * 1000)
-                    : '—',
+                'reserved_at' => isset($job['reserved_at']) ? (float) $job['reserved_at'] : null,
                 'supervisor' => $job['supervisor'] ?? '',
             ])
             ->values();

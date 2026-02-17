@@ -107,8 +107,24 @@
                             <td class="px-6 py-4">
                                 <x-dawn::job-status-badge :status="$job['status']" />
                             </td>
-                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ $job['pushed_at'] ?? '—' }}</td>
-                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ $job['waiting'] ?? '—' }}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                @if(($job['status'] ?? '') === 'delayed' && isset($job['delayed_until']))
+                                    {{ $this->formatDate($job['delayed_until']) }}
+                                @elseif(isset($job['pushed_at']))
+                                    {{ $this->formatDate($job['pushed_at']) }}
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                @if(($job['status'] ?? '') === 'delayed' && isset($job['delayed_until']))
+                                    <span x-data="dawnCountdown({{ (float) $job['delayed_until'] }})" x-text="display"></span>
+                                @elseif(isset($job['pushed_at']))
+                                    <span x-data="dawnElapsed({{ (float) $job['pushed_at'] }})" x-text="display"></span>
+                                @else
+                                    —
+                                @endif
+                            </td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -159,8 +175,20 @@
                                     Processing
                                 </span>
                             </td>
-                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ $job['started_at'] ?? '—' }}</td>
-                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ $job['elapsed'] }}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                @if(isset($job['reserved_at']))
+                                    {{ $this->formatDate($job['reserved_at']) }}
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                @if(isset($job['reserved_at']))
+                                    <span x-data="dawnElapsed({{ (float) $job['reserved_at'] }})" x-text="display"></span>
+                                @else
+                                    —
+                                @endif
+                            </td>
                             <td class="w-20 px-4 py-4 text-right">
                                 <button
                                     wire:click="cancelProcessingJob('{{ $job['id'] }}')"

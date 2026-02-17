@@ -51,7 +51,7 @@
                     @if(($job['status'] ?? '') === 'failed' && isset($job['failed_at']))
                         {{ $this->formatDate($job['failed_at']) }}
                     @elseif(($job['status'] ?? '') === 'reserved' && isset($job['reserved_at']))
-                        {{ $this->formatRuntime((now()->timestamp - $job['reserved_at']) * 1000) }}
+                        <span x-data="dawnElapsed({{ (float) $job['reserved_at'] }})" x-text="display"></span>
                     @elseif(isset($job['runtime']))
                         {{ $this->formatRuntime($job['runtime'] * 1000) }}
                     @else —

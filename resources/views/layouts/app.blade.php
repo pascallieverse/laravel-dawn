@@ -80,6 +80,58 @@
         </main>
     </div>
 
+    <script data-navigate-once>
+        function dawnFormatMs(ms) {
+            if (ms < 1000) return Math.max(0, Math.round(ms)) + 'ms';
+            var s = ms / 1000;
+            if (s < 60) return s.toFixed(1) + 's';
+            var m = Math.floor(s / 60);
+            var sec = Math.floor(s % 60);
+            if (m < 60) return m + 'm ' + sec + 's';
+            var h = Math.floor(m / 60);
+            m = m % 60;
+            return h + 'h ' + m + 'm';
+        }
+
+        document.addEventListener('alpine:init', function () {
+            Alpine.data('dawnCountdown', function (targetTimestamp) {
+                return {
+                    display: '',
+                    interval: null,
+                    init() {
+                        this.update();
+                        this.interval = setInterval(() => this.update(), 1000);
+                    },
+                    update() {
+                        var remaining = (targetTimestamp - Date.now() / 1000) * 1000;
+                        this.display = remaining > 0 ? dawnFormatMs(remaining) : 'ready';
+                    },
+                    destroy() {
+                        if (this.interval) clearInterval(this.interval);
+                    }
+                };
+            });
+
+            Alpine.data('dawnElapsed', function (startTimestamp) {
+                return {
+                    display: '',
+                    interval: null,
+                    init() {
+                        this.update();
+                        this.interval = setInterval(() => this.update(), 1000);
+                    },
+                    update() {
+                        var elapsed = (Date.now() / 1000 - startTimestamp) * 1000;
+                        this.display = dawnFormatMs(Math.max(0, elapsed));
+                    },
+                    destroy() {
+                        if (this.interval) clearInterval(this.interval);
+                    }
+                };
+            });
+        });
+    </script>
+
     @livewireScripts
 </body>
 </html>

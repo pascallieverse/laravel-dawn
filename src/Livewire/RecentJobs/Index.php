@@ -178,7 +178,7 @@ class Index extends Component
         $offset = ($this->page - 1) * $this->perPage;
 
         $jobs = match ($this->activeTab) {
-            'all' => $jobRepo->getRecent($offset, $this->perPage),
+            'all' => $this->getAllJobs($jobRepo, $offset, $this->perPage),
             'pending' => $this->getPendingFromQueues($offset, $this->perPage),
             'processing' => $jobRepo->getPending($offset, $this->perPage),
             'completed' => $jobRepo->getCompleted($offset, $this->perPage),
@@ -188,7 +188,7 @@ class Index extends Component
         };
 
         $total = match ($this->activeTab) {
-            'all' => $jobRepo->countRecent(),
+            'all' => $this->countAllJobs($jobRepo),
             'pending' => $this->countPendingInQueues(),
             'processing' => $jobRepo->countPending(),
             'completed' => $jobRepo->countCompleted(),
@@ -213,6 +213,51 @@ class Index extends Component
             'from' => $from,
             'to' => $to,
         ]);
+    }
+
+    /**
+     * Get all jobs: merge tracked jobs (from dawn:recent_jobs) with
+     * pending/delayed jobs still sitting in the queue lists.
+     */
+    protected function getAllJobs(JobRepository $jobRepo, int $offset, int $limit): array
+    {
+        // Jobs already tracked by Rust (reserved, completed, failed, retrying)
+        $tracked = $jobRepo->getRecent(0, 1000);
+        $trackedIds = array_column($tracked, 'id');
+
+        // Pending + delayed jobs from queue lists (not yet seen by Rust)
+        $pending = $this->getPendingFromQueues(0, 1000);
+
+        // Merge, avoiding duplicates (pending jobs may already be in recent_jobs)
+        foreach ($pending as $job) {
+            if (! in_array($job['id'], $trackedIds)) {
+                $tracked[] = $job;
+            }
+        }
+
+        // Sort by most recent first (pushed_at / reserved_at / completed_at / failed_at)
+        usort($tracked, function ($a, $b) {
+            $timeA = $a['failed_at'] ?? $a['completed_at'] ?? $a['reserved_at'] ?? $a['pushed_at'] ?? 0;
+            $timeB = $b['failed_at'] ?? $b['completed_at'] ?? $b['reserved_at'] ?? $b['pushed_at'] ?? 0;
+            return $timeB <=> $timeA;
+        });
+
+        return array_slice($tracked, $offset, $limit);
+    }
+
+    /**
+     * Count all jobs: tracked (recent_jobs) + untracked pending/delayed.
+     */
+    protected function countAllJobs(JobRepository $jobRepo): int
+    {
+        $trackedCount = $jobRepo->countRecent();
+        $pendingCount = $this->countPendingInQueues();
+
+        // Avoid double-counting: pending jobs that Rust has already reserved
+        // show up in both recent_jobs and the queue list briefly.
+        // Since pending jobs in the queue list are NOT in recent_jobs
+        // (Rust removes them on pop), we can safely add them.
+        return $trackedCount + $pendingCount;
     }
 
     /**
