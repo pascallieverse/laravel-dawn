@@ -69,6 +69,8 @@ class Show extends Component
             }
 
             $logs = $this->getLogsAroundTimestamp($job['failed_at'] ?? null);
+        } elseif (($job['status'] ?? '') === 'completed') {
+            $logs = $this->getLogsAroundTimestamp($job['completed_at'] ?? null);
         }
 
         return view('dawn::livewire.recent-jobs.show', [

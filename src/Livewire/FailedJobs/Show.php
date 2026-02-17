@@ -30,6 +30,13 @@ class Show extends Component
         }
     }
 
+    public function delete(): void
+    {
+        app(JobRepository::class)->deleteFailed($this->jobId);
+
+        $this->redirect(route('dawn.failed'), navigate: true);
+    }
+
     public function render()
     {
         $repo = app(JobRepository::class);

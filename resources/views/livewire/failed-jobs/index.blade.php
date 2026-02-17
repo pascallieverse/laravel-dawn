@@ -2,13 +2,22 @@
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Failed Jobs</h1>
         @if($total > 0)
-            <button
-                wire:click="retryAll"
-                wire:confirm="Are you sure you want to retry all {{ $total }} failed jobs?"
-                class="px-4 py-2 bg-dawn-500 hover:bg-dawn-600 text-white text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-dawn-500 focus:ring-offset-2"
-            >
-                Retry All
-            </button>
+            <div class="flex items-center gap-2">
+                <button
+                    wire:click="retryAll"
+                    wire:confirm="Are you sure you want to retry all {{ $total }} failed jobs?"
+                    class="px-4 py-2 bg-dawn-500 hover:bg-dawn-600 text-white text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-dawn-500 focus:ring-offset-2"
+                >
+                    Retry All
+                </button>
+                <button
+                    wire:click="deleteAll"
+                    wire:confirm="Delete all {{ $total }} failed jobs? This cannot be undone."
+                    class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                >
+                    Delete All
+                </button>
+            </div>
         @endif
     </div>
 
@@ -45,15 +54,22 @@
                             <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono text-xs">{{ $job['id'] ?? '-' }}</td>
                             <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ $this->formatDate($job['failed_at'] ?? null) }}</td>
                             <td class="px-3 sm:px-6 py-4 text-sm text-red-600 dark:text-red-400 truncate max-w-xs">{{ $job['error'] ?? $job['exception'] ?? '-' }}</td>
-                            <td class="px-3 sm:px-6 py-4 text-right">
+                            <td class="px-3 sm:px-6 py-4 text-right whitespace-nowrap">
                                 @if(($job['status'] ?? '') !== 'retried')
                                     <button
                                         wire:click="retry('{{ $job['id'] ?? '' }}')"
-                                        class="text-sm text-dawn-600 dark:text-dawn-400 hover:text-dawn-700 dark:hover:text-dawn-300 font-medium"
+                                        class="text-sm text-dawn-600 dark:text-dawn-400 hover:text-dawn-700 dark:hover:text-dawn-300 font-medium mr-3"
                                     >
                                         Retry
                                     </button>
                                 @endif
+                                <button
+                                    wire:click="delete('{{ $job['id'] ?? '' }}')"
+                                    wire:confirm="Delete this failed job?"
+                                    class="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium"
+                                >
+                                    Delete
+                                </button>
                             </td>
                         </tr>
                     @endforeach

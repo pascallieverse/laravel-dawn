@@ -32,6 +32,21 @@ class Index extends Component
         app(JobRepository::class)->retryAll();
     }
 
+    public function delete(string $id): void
+    {
+        app(JobRepository::class)->deleteFailed($id);
+    }
+
+    public function deleteAll(): void
+    {
+        $jobRepo = app(JobRepository::class);
+        $jobs = $jobRepo->getFailed(0, 500);
+
+        foreach ($jobs as $job) {
+            $jobRepo->deleteFailed($job['id'] ?? '');
+        }
+    }
+
     public function previousPage(): void
     {
         $this->page = max(1, $this->page - 1);

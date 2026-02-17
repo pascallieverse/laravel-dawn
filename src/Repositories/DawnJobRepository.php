@@ -73,9 +73,10 @@ class DawnJobRepository implements JobRepository
     public function deleteFailed(string $id): void
     {
         $conn = $this->connection();
-        $conn->del([$this->prefix . 'failed:' . $id]);
+        $conn->del([$this->prefix . 'failed:' . $id, $this->prefix . 'job:' . $id]);
         $conn->zrem($this->prefix . 'failed_jobs', $id);
         $conn->zrem($this->prefix . 'recent_failed_jobs', $id);
+        $conn->zrem($this->prefix . 'recent_jobs', $id);
     }
 
     public function retry(string $id): ?string
@@ -95,7 +96,14 @@ class DawnJobRepository implements JobRepository
         $queue = $failed['queue'] ?? 'default';
         $payload = $failed['payload'] ?? [];
 
-        if (! empty($payload)) {
+        // Validate the payload has the minimum fields Rust needs to parse it.
+        // Force-cancelled jobs may have incomplete payloads and cannot be retried.
+        $hasRequiredFields = ! empty($payload)
+            && isset($payload['displayName'])
+            && isset($payload['job'])
+            && isset($payload['data']['command']);
+
+        if ($hasRequiredFields) {
             // Create a NEW job with a fresh UUID for the retry
             $newUuid = (string) \Illuminate\Support\Str::uuid();
             $newId = 'dawn-' . $newUuid;

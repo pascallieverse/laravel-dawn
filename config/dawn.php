@@ -152,8 +152,8 @@ return [
     */
 
     'trim' => [
-        'recent' => 60,
-        'completed' => 60,
+        'recent' => 1440,       // 24 hours
+        'completed' => 1440,    // 24 hours
         'recent_failed' => 10080,
         'failed_jobs' => 10080,
         'monitored' => 10080,
