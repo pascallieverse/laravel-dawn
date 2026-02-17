@@ -28,6 +28,7 @@
         <x-dawn::sidebar-link href="{{ route('dawn.performance') }}" icon="chart" label="Performance" :active="request()->routeIs('dawn.performance')" />
 
         <p class="px-3 pt-4 pb-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Jobs</p>
+        <x-dawn::sidebar-link href="{{ route('dawn.jobs', ['type' => 'all']) }}" icon="list" label="All" :active="request()->routeIs('dawn.jobs') && request()->route('type') === 'all'" />
         <x-dawn::sidebar-link href="{{ route('dawn.jobs', ['type' => 'pending']) }}" icon="clock" label="Pending" :active="request()->routeIs('dawn.jobs') && in_array(request()->route('type', 'pending'), ['pending', null])" />
         <x-dawn::sidebar-link href="{{ route('dawn.jobs', ['type' => 'processing']) }}" icon="refresh" label="Processing" :active="request()->routeIs('dawn.jobs') && request()->route('type') === 'processing'" />
         <x-dawn::sidebar-link href="{{ route('dawn.jobs', ['type' => 'completed']) }}" icon="check" label="Completed" :active="request()->routeIs('dawn.jobs') && request()->route('type') === 'completed'" />
