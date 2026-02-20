@@ -15,6 +15,7 @@ use Dawn\Repositories\DawnMetricsRepository;
 use Dawn\Repositories\DawnSupervisorRepository;
 use Dawn\Repositories\DawnTagRepository;
 use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -40,6 +41,7 @@ class DawnServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->registerAuthorization();
         $this->excludeDarkModeCookie();
         $this->registerRoutes();
         $this->registerResources();
@@ -47,6 +49,26 @@ class DawnServiceProvider extends ServiceProvider
         $this->registerCommands();
         $this->registerQueueConnector();
         $this->registerPublishing();
+    }
+
+    /**
+     * Register default authorization for the Dawn dashboard.
+     *
+     * Sets a default auth callback that allows access in local environments
+     * and checks the `viewDawn` gate otherwise. If the user publishes their
+     * own DawnServiceProvider (via dawn:install), it extends
+     * DawnApplicationServiceProvider which overrides this with Dawn::auth().
+     */
+    protected function registerAuthorization(): void
+    {
+        // Only set default if no custom auth has been registered
+        // (e.g. by the user's App\Providers\DawnServiceProvider)
+        if (Dawn::$authUsing === null) {
+            Dawn::auth(function ($request) {
+                return app()->environment('local')
+                    || Gate::check('viewDawn', [$request->user()]);
+            });
+        }
     }
 
     /**

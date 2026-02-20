@@ -3,6 +3,7 @@
 namespace Dawn\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 
 class InstallCommand extends Command
@@ -40,7 +41,6 @@ class InstallCommand extends Command
     {
         $namespace = Str::replaceLast('\\', '', $this->laravel->getNamespace());
 
-        // Check if the provider is already registered
         $providerPath = app_path('Providers/DawnServiceProvider.php');
 
         if (! file_exists($providerPath)) {
@@ -85,6 +85,27 @@ class InstallCommand extends Command
             }
 
             file_put_contents($providerPath, $stub);
+        }
+
+        $provider = "{$namespace}\\Providers\\DawnServiceProvider";
+
+        // Laravel 11+ uses bootstrap/providers.php
+        if (file_exists($this->laravel->bootstrapPath('providers.php'))) {
+            ServiceProvider::addProviderToBootstrapFile($provider);
+        } else {
+            // Laravel 10 and earlier use config/app.php
+            $appConfig = file_get_contents(config_path('app.php'));
+
+            if (Str::contains($appConfig, $provider)) {
+                return;
+            }
+
+            file_put_contents(config_path('app.php'), str_replace(
+                "{$namespace}\\Providers\\EventServiceProvider::class,".PHP_EOL,
+                "{$namespace}\\Providers\\EventServiceProvider::class,".PHP_EOL.
+                "        {$namespace}\\Providers\\DawnServiceProvider::class,".PHP_EOL,
+                $appConfig
+            ));
         }
     }
 

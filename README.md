@@ -211,41 +211,35 @@ php artisan dawn:install
 
 Commit the changes (`config/dawn.php`, `DawnServiceProvider.php`, `.env` updates) and deploy.
 
-#### 2. Upload the Dawn binary
+#### 2. Create a Daemon in Forge
 
-The Rust binary needs to be on your server. SSH into your Forge server and place it in your project:
+In the Forge dashboard, go to your server → **Daemons** → **Create Daemon**.
 
-```bash
-cd /home/forge/your-site.com
-# Copy the binary into the vendor bin directory
-cp /path/to/dawn ./vendor/bin/dawn
-chmod +x ./vendor/bin/dawn
-```
-
-> **Tip:** You can also include the binary in your repository or download it during deployment (see step 5).
-
-#### 3. Create a Daemon in Forge
-
-In the Forge dashboard:
-
-1. Go to your server → **Daemons**
-2. Click **Create Daemon** with these settings:
+You must use the **absolute path** to the Dawn binary and specify your PHP version explicitly. Replace `{user}` with your Forge site user (e.g. `forge`, or the isolated site user) and `{site}` with your site directory name:
 
 | Field | Value |
 |---|---|
-| Command | `/home/forge/your-site.com/vendor/bin/dawn` |
-| User | `forge` (or your isolated site user) |
-| Directory | `/home/forge/your-site.com` |
+| Command | See below |
+| User | `{user}` |
+| Directory | `/home/{user}/{site}` |
 | Processes | `1` |
 | Start Seconds | `1` |
-| Stop Seconds | `10` |
+| Stop Seconds | `15` |
 | Stop Signal | `SIGTERM` |
+
+**Command** (must be a single line with absolute paths):
+
+```
+/home/{user}/{site}/vendor/pascallieverse/laravel-dawn/bin/dawn-linux-x64 --php /usr/bin/php8.4 --log-file /home/{user}/.forge/dawn.log
+```
+
+Adjust `php8.4` to match your site's PHP version (`php8.3`, `php8.2`, etc.).
 
 > **Important:** Only run **1 process** — Dawn manages its own worker pool internally. Running multiple Dawn processes will cause duplicate job execution.
 
-3. Click **Save**. Forge will create and start the Supervisor config automatically.
+Click **Save**. Forge will create and start the Supervisor config automatically.
 
-#### 4. Configure the Dashboard Gate
+#### 3. Configure the Dashboard Gate
 
 Edit `app/Providers/DawnServiceProvider.php` to grant dashboard access:
 
@@ -262,28 +256,29 @@ protected function gate(): void
 
 Visit `https://your-site.com/dawn` to access the dashboard.
 
-#### 5. Add Graceful Restart to Deployments
+#### 4. Add to your Deployment Script
 
-Dawn needs to be restarted after each deployment to pick up code changes. In the Forge dashboard:
-
-1. Go to your site → **Deployments** → **Deployment Script**
-2. Add the following **after** `php artisan migrate --force`:
+In the Forge dashboard, go to your site → **Deployments** → **Deployment Script**. Add the following after `composer install`:
 
 ```bash
-# Restart Dawn to pick up code changes
+# Ensure Dawn binary is executable (Composer doesn't preserve permissions)
+chmod +x vendor/pascallieverse/laravel-dawn/bin/dawn-linux-x64
+
+# Restart Dawn (finishes current jobs, then Supervisor restarts it)
 php artisan dawn:terminate
 ```
-
-Dawn handles `SIGTERM` gracefully — it finishes currently running jobs before shutting down. Supervisor then restarts it automatically.
 
 A full deployment script example:
 
 ```bash
-cd /home/forge/your-site.com
+cd /home/{user}/{site}
 
 git pull origin $FORGE_SITE_BRANCH
 
 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+# Ensure Dawn binary is executable
+chmod +x vendor/pascallieverse/laravel-dawn/bin/dawn-linux-x64
 
 php artisan migrate --force
 
@@ -295,11 +290,11 @@ php artisan route:cache
 php artisan view:cache
 ```
 
-#### 6. Verify it's Running
+#### 5. Verify it's Running
 
 ```bash
-# SSH into your server and check
-php artisan dawn:status
+# Check the Dawn log
+cat /home/{user}/.forge/dawn.log
 
 # Or check Supervisor directly
 sudo supervisorctl status
@@ -307,10 +302,11 @@ sudo supervisorctl status
 
 #### Troubleshooting on Forge
 
-- **Dawn won't start** — Check the daemon log in Forge (Server → Daemons → your daemon → Log). Common issues: wrong binary path, missing permissions (`chmod +x`), or Redis not available.
+- **Dawn won't start / stops immediately with no log** — Make sure the daemon command uses **absolute paths** (not relative). Supervisor does not reliably resolve relative paths even with a `directory` setting. Also ensure the binary is executable (`chmod +x`).
+- **"Exec format error"** — You're running the wrong binary for your server's architecture. Forge servers are typically `linux-x64`. Use `dawn-linux-x64`, not the macOS or ARM binary.
 - **Jobs not processing** — Verify `QUEUE_CONNECTION=dawn` in your `.env` and that Redis is running. Run `php artisan dawn:export-config` to check the resolved configuration.
 - **Dashboard returns 403** — Update the `viewDawn` gate in `DawnServiceProvider.php` with your email.
-- **PHP version mismatch** — If your Forge site uses an isolated PHP version, make sure the daemon's user matches (Forge handles this when you select the correct user).
+- **Wrong PHP version** — Forge servers with multiple PHP versions need the explicit `--php /usr/bin/php8.x` flag. The bare `php` command may point to a different version or not be in Supervisor's PATH.
 
 ### Static Config File
 
