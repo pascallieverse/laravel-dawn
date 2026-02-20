@@ -56,6 +56,11 @@ if (! file_exists($binary)) {
     exit(1);
 }
 
+// Ensure binary is executable (Composer doesn't preserve permissions)
+if (! is_executable($binary)) {
+    chmod($binary, 0755);
+}
+
 // Forward all arguments
 $args = array_slice($argv, 1);
 
