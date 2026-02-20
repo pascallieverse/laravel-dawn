@@ -198,6 +198,120 @@ To run as a Windows Service, install [NSSM](https://nssm.cc) and follow the prin
 
 The generated configs include the correct paths to your PHP binary and project directory — no manual editing needed. On Forge servers, the user is auto-detected (including isolated sites).
 
+### Deploying on Laravel Forge
+
+Forge uses Supervisor under the hood, so Dawn integrates naturally.
+
+#### 1. Install Dawn in your project
+
+```bash
+composer require pascallieverse/laravel-dawn
+php artisan dawn:install
+```
+
+Commit the changes (`config/dawn.php`, `DawnServiceProvider.php`, `.env` updates) and deploy.
+
+#### 2. Upload the Dawn binary
+
+The Rust binary needs to be on your server. SSH into your Forge server and place it in your project:
+
+```bash
+cd /home/forge/your-site.com
+# Copy the binary into the vendor bin directory
+cp /path/to/dawn ./vendor/bin/dawn
+chmod +x ./vendor/bin/dawn
+```
+
+> **Tip:** You can also include the binary in your repository or download it during deployment (see step 5).
+
+#### 3. Create a Daemon in Forge
+
+In the Forge dashboard:
+
+1. Go to your server → **Daemons**
+2. Click **Create Daemon** with these settings:
+
+| Field | Value |
+|---|---|
+| Command | `/home/forge/your-site.com/vendor/bin/dawn` |
+| User | `forge` (or your isolated site user) |
+| Directory | `/home/forge/your-site.com` |
+| Processes | `1` |
+| Start Seconds | `1` |
+| Stop Seconds | `10` |
+| Stop Signal | `SIGTERM` |
+
+> **Important:** Only run **1 process** — Dawn manages its own worker pool internally. Running multiple Dawn processes will cause duplicate job execution.
+
+3. Click **Save**. Forge will create and start the Supervisor config automatically.
+
+#### 4. Configure the Dashboard Gate
+
+Edit `app/Providers/DawnServiceProvider.php` to grant dashboard access:
+
+```php
+protected function gate(): void
+{
+    Gate::define('viewDawn', function ($user) {
+        return in_array($user->email, [
+            'your-email@example.com',
+        ]);
+    });
+}
+```
+
+Visit `https://your-site.com/dawn` to access the dashboard.
+
+#### 5. Add Graceful Restart to Deployments
+
+Dawn needs to be restarted after each deployment to pick up code changes. In the Forge dashboard:
+
+1. Go to your site → **Deployments** → **Deployment Script**
+2. Add the following **after** `php artisan migrate --force`:
+
+```bash
+# Restart Dawn to pick up code changes
+php artisan dawn:terminate
+```
+
+Dawn handles `SIGTERM` gracefully — it finishes currently running jobs before shutting down. Supervisor then restarts it automatically.
+
+A full deployment script example:
+
+```bash
+cd /home/forge/your-site.com
+
+git pull origin $FORGE_SITE_BRANCH
+
+composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+php artisan migrate --force
+
+# Restart Dawn (finishes current jobs, then Supervisor restarts it)
+php artisan dawn:terminate
+
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+```
+
+#### 6. Verify it's Running
+
+```bash
+# SSH into your server and check
+php artisan dawn:status
+
+# Or check Supervisor directly
+sudo supervisorctl status
+```
+
+#### Troubleshooting on Forge
+
+- **Dawn won't start** — Check the daemon log in Forge (Server → Daemons → your daemon → Log). Common issues: wrong binary path, missing permissions (`chmod +x`), or Redis not available.
+- **Jobs not processing** — Verify `QUEUE_CONNECTION=dawn` in your `.env` and that Redis is running. Run `php artisan dawn:export-config` to check the resolved configuration.
+- **Dashboard returns 403** — Update the `viewDawn` gate in `DawnServiceProvider.php` with your email.
+- **PHP version mismatch** — If your Forge site uses an isolated PHP version, make sure the daemon's user matches (Forge handles this when you select the correct user).
+
 ### Static Config File
 
 By default Dawn reads config from Laravel at startup. If you prefer a static config file (e.g. for faster startup or to pin a known-good config):

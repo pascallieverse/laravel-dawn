@@ -73,7 +73,7 @@ class DawnJobRepository implements JobRepository
     public function deleteFailed(string $id): void
     {
         $conn = $this->connection();
-        $conn->del([$this->prefix . 'failed:' . $id, $this->prefix . 'job:' . $id]);
+        $conn->del([$this->prefix . 'failed:' . $id, $this->prefix . 'job:' . $id, $this->prefix . 'logs:' . $id]);
         $conn->zrem($this->prefix . 'failed_jobs', $id);
         $conn->zrem($this->prefix . 'recent_failed_jobs', $id);
         $conn->zrem($this->prefix . 'recent_jobs', $id);
@@ -308,6 +308,40 @@ class DawnJobRepository implements JobRepository
                 $conn->zadd($failedKey, $score, $id);
             }
         }
+    }
+
+    public function storeJobLogs(string $id, array $logs): void
+    {
+        if (empty($logs)) {
+            return;
+        }
+
+        // Truncate to max 50 entries to avoid oversized Redis values
+        $logs = array_slice($logs, 0, 50);
+
+        $encoded = json_encode($logs, JSON_INVALID_UTF8_SUBSTITUTE);
+
+        if ($encoded === false) {
+            return;
+        }
+
+        // Use 7-day TTL (same as failed jobs) so logs outlive the job record
+        $this->connection()->setex(
+            $this->prefix . 'logs:' . $id,
+            604800,
+            $encoded
+        );
+    }
+
+    public function getJobLogs(string $id): array
+    {
+        $data = $this->connection()->get($this->prefix . 'logs:' . $id);
+
+        if (! $data) {
+            return [];
+        }
+
+        return json_decode($data, true) ?: [];
     }
 
     /**

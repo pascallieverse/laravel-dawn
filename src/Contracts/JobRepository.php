@@ -84,4 +84,18 @@ interface JobRepository
      * and mark it as failed. Used when Rust is not running.
      */
     public function forceCancel(string $id): void;
+
+    /**
+     * Store log entries captured during job execution.
+     *
+     * @param  array<int, array{timestamp: string, text: string}>  $logs
+     */
+    public function storeJobLogs(string $id, array $logs): void;
+
+    /**
+     * Retrieve log entries captured during job execution.
+     *
+     * @return array<int, array{timestamp: string, text: string}>
+     */
+    public function getJobLogs(string $id): array;
 }

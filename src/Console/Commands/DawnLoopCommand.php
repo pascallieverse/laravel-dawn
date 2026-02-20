@@ -3,6 +3,9 @@
 namespace Dawn\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Log\LogManager;
+use Monolog\Handler\AbstractProcessingHandler;
+use Monolog\LogRecord;
 
 /**
  * Warm worker loop — boots Laravel once, then loops reading job payloads from stdin
@@ -85,21 +88,28 @@ class DawnLoopCommand extends Command
                 ];
             }
 
+            // Install a temporary log handler to capture logs during job execution
+            $capturedLogs = [];
+            $handler = $this->installLogCapture($capturedLogs);
+
             // Unserialize the job command
             $command = unserialize($payload['data']['command']);
 
             // Resolve and execute the handle method
             app()->call([$command, 'handle']);
 
+            $this->removeLogCapture($handler);
+
             return [
                 'status' => 'complete',
                 'memory' => memory_get_usage() - $startMemory,
                 'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
+                'logs' => array_slice($capturedLogs, 0, 50),
             ];
         } catch (\Throwable $e) {
             $runtimeMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 
-            // Log the failure via Laravel's logger
+            // Log the failure via Laravel's logger (captured by the handler)
             $jobName = $payload['displayName'] ?? $payload['data']['commandName'] ?? 'Unknown';
             \Illuminate\Support\Facades\Log::error("[Dawn] Job failed: {$jobName}", [
                 'job' => $jobName,
@@ -107,6 +117,10 @@ class DawnLoopCommand extends Command
                 'file' => $e->getFile() . ':' . $e->getLine(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            if (isset($handler)) {
+                $this->removeLogCapture($handler);
+            }
 
             // Truncate exception/trace to prevent oversized JSON responses
             // that could cause encoding issues or slow down Redis storage
@@ -119,7 +133,72 @@ class DawnLoopCommand extends Command
                 'trace' => $trace,
                 'memory' => memory_get_usage() - $startMemory,
                 'runtime_ms' => $runtimeMs,
+                'logs' => array_slice($capturedLogs ?? [], 0, 50),
             ];
+        }
+    }
+
+    /**
+     * Install a temporary Monolog handler that captures log entries in memory.
+     *
+     * @param  array<int, array{timestamp: string, text: string}>  $capturedLogs
+     */
+    protected function installLogCapture(array &$capturedLogs): AbstractProcessingHandler
+    {
+        $handler = new class($capturedLogs) extends AbstractProcessingHandler
+        {
+            /** @var array<int, array{timestamp: string, text: string}> */
+            private array $logs;
+
+            public function __construct(array &$logs)
+            {
+                parent::__construct();
+                $this->logs = &$logs;
+            }
+
+            protected function write(LogRecord $record): void
+            {
+                $this->logs[] = [
+                    'timestamp' => $record->datetime->format('Y-m-d H:i:s'),
+                    'text' => sprintf(
+                        '[%s] %s.%s: %s %s',
+                        $record->datetime->format('Y-m-d H:i:s'),
+                        $record->channel,
+                        $record->level->name,
+                        $record->message,
+                        $record->context ? json_encode($record->context, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) : '',
+                    ),
+                ];
+            }
+        };
+
+        $logger = app('log');
+
+        if ($logger instanceof LogManager) {
+            $monolog = $logger->driver()->getLogger();
+            $monolog->pushHandler($handler);
+        }
+
+        return $handler;
+    }
+
+    /**
+     * Remove the temporary log capture handler.
+     */
+    protected function removeLogCapture(AbstractProcessingHandler $handler): void
+    {
+        $logger = app('log');
+
+        if ($logger instanceof LogManager) {
+            $monolog = $logger->driver()->getLogger();
+            $handlers = $monolog->getHandlers();
+
+            $monolog->setHandlers(
+                array_values(array_filter(
+                    iterator_to_array($handlers),
+                    fn ($h) => $h !== $handler
+                ))
+            );
         }
     }
 }

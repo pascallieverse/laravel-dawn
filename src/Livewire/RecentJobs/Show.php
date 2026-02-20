@@ -68,11 +68,13 @@ class Show extends Component
                 unset($frame);
             }
 
-            $logs = $this->getLogsAroundTimestamp($job['failed_at'] ?? null);
+            $logs = $repo->getJobLogs($this->jobId)
+                ?: $this->getLogsAroundTimestamp($job['failed_at'] ?? null);
         } else {
-            $logs = $this->getLogsAroundTimestamp(
-                $job['completed_at'] ?? $job['reserved_at'] ?? $job['pushed_at'] ?? null
-            );
+            $logs = $repo->getJobLogs($this->jobId)
+                ?: $this->getLogsAroundTimestamp(
+                    $job['completed_at'] ?? $job['reserved_at'] ?? $job['pushed_at'] ?? null
+                );
         }
 
         return view('dawn::livewire.recent-jobs.show', [

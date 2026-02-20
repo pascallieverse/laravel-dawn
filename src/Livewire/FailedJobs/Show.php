@@ -73,7 +73,8 @@ class Show extends Component
             unset($frame);
         }
 
-        $logs = $this->getLogsAroundTimestamp($job['failed_at'] ?? null);
+        $logs = $repo->getJobLogs($this->jobId)
+            ?: $this->getLogsAroundTimestamp($job['failed_at'] ?? null);
 
         return view('dawn::livewire.failed-jobs.show', [
             'job' => $job,
