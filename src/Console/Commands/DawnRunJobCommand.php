@@ -2,6 +2,7 @@
 
 namespace Dawn\Console\Commands;
 
+use Dawn\Jobs\DawnJob;
 use Illuminate\Console\Command;
 use Illuminate\Log\LogManager;
 use Monolog\Handler\AbstractProcessingHandler;
@@ -44,10 +45,31 @@ class DawnRunJobCommand extends Command
         $handler = $this->installLogCapture($capturedLogs);
 
         try {
-            $command = unserialize($payload['data']['command']);
-            app()->call([$command, 'handle']);
+            // Use Laravel's full queue pipeline (CallQueuedHandler) instead
+            // of raw app()->call(). This ensures InteractsWithQueue, middleware,
+            // event broadcasting, chains, and batches all work correctly.
+            $job = new DawnJob(
+                app(),
+                $rawPayload,
+                'dawn',
+                $payload['queue'] ?? 'default',
+            );
+
+            $job->fire();
 
             $this->removeLogCapture($handler);
+
+            if ($job->isReleased()) {
+                $result = [
+                    'status' => 'released',
+                    'delay' => $job->releaseDelay,
+                    'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
+                    'logs' => array_slice($capturedLogs, 0, 50),
+                ];
+                fwrite(STDOUT, json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
+                fflush(STDOUT);
+                return 0;
+            }
 
             $result = [
                 'status' => 'complete',

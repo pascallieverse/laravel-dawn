@@ -2,6 +2,7 @@
 
 namespace Dawn\Console\Commands;
 
+use Dawn\Jobs\DawnJob;
 use Illuminate\Console\Command;
 use Illuminate\Log\LogManager;
 use Monolog\Handler\AbstractProcessingHandler;
@@ -69,6 +70,10 @@ class DawnLoopCommand extends Command
 
     /**
      * Process a single job from the payload JSON.
+     *
+     * Uses Laravel's CallQueuedHandler pipeline (via Job::fire()) instead
+     * of calling handle() directly. This ensures full compatibility with
+     * InteractsWithQueue, job middleware, event broadcasting, chains, and batches.
      */
     protected function processJob(string $rawPayload): array
     {
@@ -92,13 +97,30 @@ class DawnLoopCommand extends Command
             $capturedLogs = [];
             $handler = $this->installLogCapture($capturedLogs);
 
-            // Unserialize the job command
-            $command = unserialize($payload['data']['command']);
+            // Create a proper Job instance and fire it through Laravel's pipeline.
+            // This calls CallQueuedHandler::call() which sets $this->job on the
+            // command, runs middleware, fires events, and handles chains/batches.
+            $job = new DawnJob(
+                app(),
+                $rawPayload,
+                'dawn',
+                $payload['queue'] ?? 'default',
+            );
 
-            // Resolve and execute the handle method
-            app()->call([$command, 'handle']);
+            $job->fire();
 
             $this->removeLogCapture($handler);
+
+            // Check if the job was released back to the queue
+            if ($job->isReleased()) {
+                return [
+                    'status' => 'released',
+                    'delay' => $job->releaseDelay,
+                    'memory' => memory_get_usage() - $startMemory,
+                    'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
+                    'logs' => array_slice($capturedLogs, 0, 50),
+                ];
+            }
 
             return [
                 'status' => 'complete',
