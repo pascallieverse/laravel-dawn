@@ -92,15 +92,16 @@ class ExportConfigCommand extends Command
         $connection = $config['use'] ?? 'default';
         $redisConfig = config("database.redis.{$connection}", []);
 
-        $scheme = ($redisConfig['scheme'] ?? 'tcp') === 'tls' ? 'rediss' : 'redis';
-        $host = $redisConfig['host'] ?? '127.0.0.1';
-        $port = $redisConfig['port'] ?? 6379;
-        $password = $redisConfig['password'] ?? null;
-        $database = $redisConfig['database'] ?? 0;
-
+        // If a full URL is provided, use it directly
         if ($redisConfig['url'] ?? null) {
             return $redisConfig['url'];
         }
+
+        $scheme = ($redisConfig['scheme'] ?? 'tcp') === 'tls' ? 'rediss' : 'redis';
+        $host = $redisConfig['host'] ?? '127.0.0.1';
+        $port = (int) ($redisConfig['port'] ?? 6379);
+        $password = $redisConfig['password'] ?? null;
+        $database = (int) ($redisConfig['database'] ?? 0);
 
         $auth = $password ? ":{$password}@" : '';
 
