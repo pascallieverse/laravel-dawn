@@ -48,6 +48,12 @@ class Dashboard extends Component
         $totalProcesses = collect($allSupervisors)->sum(fn ($s) => $s['processes'] ?? 0);
 
         $status = $this->getStatus($masters, $supervisors);
+
+        // When supervisor keys are missing from Redis but dawn is running,
+        // infer process count from config so the dashboard isn't blank
+        if ($totalProcesses === 0 && $status === 'running') {
+            $totalProcesses = $this->getProcessCountFromConfig();
+        }
         $jobsPerMinute = $this->getJobsPerMinute($metrics);
 
         // Collect unique queues and per-queue process counts from all supervisors
@@ -198,15 +204,7 @@ class Dashboard extends Component
         // If jobs are in pending_jobs (being processed by Rust), dawn is running
         // even if master/supervisor registration keys have temporarily expired.
         $conn = app(RedisFactory::class)->connection('dawn');
-        $prefix = app('config')->get('dawn.prefix', '');
-        if ($prefix === '' || $prefix === null) {
-            $appName = app('config')->get('app.name', 'Laravel');
-            $slug = preg_replace('/[^a-z0-9]+/', '_', strtolower($appName));
-            $prefix = trim($slug, '_') . '_dawn:';
-        }
-        if (! str_ends_with($prefix, ':')) {
-            $prefix .= ':';
-        }
+        $prefix = \Dawn\DawnServiceProvider::resolvePrefix();
 
         $processingCount = (int) $conn->zcard($prefix . 'pending_jobs');
         if ($processingCount > 0) {
@@ -265,5 +263,24 @@ class Dashboard extends Component
         }
 
         return empty($queues) ? ['default'] : array_keys($queues);
+    }
+
+    /**
+     * Get the total configured process count from dawn config.
+     * Used as fallback when supervisor Redis keys are unavailable.
+     */
+    protected function getProcessCountFromConfig(): int
+    {
+        $env = app()->environment();
+        $defaults = config('dawn.defaults', []);
+        $envOverrides = config("dawn.environments.{$env}", []);
+
+        $total = 0;
+        foreach ($defaults as $name => $sup) {
+            $merged = array_merge($sup, $envOverrides[$name] ?? []);
+            $total += $merged['minProcesses'] ?? $merged['maxProcesses'] ?? 1;
+        }
+
+        return $total ?: 1;
     }
 }

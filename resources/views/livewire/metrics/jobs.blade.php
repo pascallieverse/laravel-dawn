@@ -8,7 +8,10 @@
                 <thead>
                     <tr class="bg-gray-50 dark:bg-gray-800">
                         <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Job</th>
-                        <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Jobs Processed</th>
+                        <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Pending</th>
+                        <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Processing</th>
+                        <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Completed</th>
+                        <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Failed</th>
                         <th class="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Avg Runtime</th>
                         <th class="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"></th>
                     </tr>
@@ -17,7 +20,34 @@
                     @foreach($metrics as $metric)
                         <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                             <td class="px-3 sm:px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{{ $metric['name'] ?? '-' }}</td>
-                            <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ number_format($metric['count'] ?? 0) }}</td>
+                            <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                @if(($metric['pending'] ?? 0) > 0)
+                                    <span class="text-yellow-600 dark:text-yellow-400 font-medium">{{ number_format($metric['pending']) }}</span>
+                                @else
+                                    <span class="text-gray-400 dark:text-gray-500">0</span>
+                                @endif
+                            </td>
+                            <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                @if(($metric['processing'] ?? 0) > 0)
+                                    <span class="text-blue-600 dark:text-blue-400 font-medium">{{ number_format($metric['processing']) }}</span>
+                                @else
+                                    <span class="text-gray-400 dark:text-gray-500">0</span>
+                                @endif
+                            </td>
+                            <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                @if(($metric['completed'] ?? 0) > 0)
+                                    <span class="text-green-600 dark:text-green-400 font-medium">{{ number_format($metric['completed']) }}</span>
+                                @else
+                                    <span class="text-gray-400 dark:text-gray-500">0</span>
+                                @endif
+                            </td>
+                            <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                @if(($metric['failed'] ?? 0) > 0)
+                                    <span class="text-red-600 dark:text-red-400 font-medium">{{ number_format($metric['failed']) }}</span>
+                                @else
+                                    <span class="text-gray-400 dark:text-gray-500">0</span>
+                                @endif
+                            </td>
                             <td class="px-3 sm:px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ $this->formatRuntime($metric['avg_runtime'] ?? 0) }}</td>
                             <td class="px-3 sm:px-6 py-4 text-right">
                                 <a
