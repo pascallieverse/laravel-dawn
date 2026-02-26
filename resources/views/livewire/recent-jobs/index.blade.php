@@ -37,6 +37,30 @@
                 </button>
             </div>
         @endif
+
+        {{-- Retry Actions (only for failed tab) --}}
+        @if($activeTab === 'failed' && count($jobs) > 0)
+            <div class="flex items-center gap-2">
+                @if(count($selected) > 0)
+                    <button
+                        wire:click="retrySelected"
+                        wire:confirm="Retry {{ count($selected) }} selected job(s)?"
+                        class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-dawn-700 bg-dawn-50 hover:bg-dawn-100 dark:text-dawn-400 dark:bg-dawn-900/20 dark:hover:bg-dawn-900/30 border border-dawn-200 dark:border-dawn-800 rounded-md transition-colors"
+                    >
+                        <svg class="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+                        Retry Selected ({{ count($selected) }})
+                    </button>
+                @endif
+                <button
+                    wire:click="retryAllFailed"
+                    wire:confirm="Retry ALL {{ $total }} failed jobs?"
+                    class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-dawn-700 bg-dawn-50 hover:bg-dawn-100 dark:text-dawn-400 dark:bg-dawn-900/20 dark:hover:bg-dawn-900/30 border border-dawn-200 dark:border-dawn-800 rounded-md transition-colors"
+                >
+                    <svg class="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+                    Retry All
+                </button>
+            </div>
+        @endif
     </div>
 
     {{-- Jobs Table --}}
@@ -46,7 +70,7 @@
             <table class="w-full">
                 <thead>
                     <tr class="bg-gray-50 dark:bg-gray-800">
-                        @if(in_array($activeTab, ['pending', 'processing']))
+                        @if(in_array($activeTab, ['pending', 'processing', 'failed']))
                             <th class="w-10 px-4 py-3">
                                 <input
                                     type="checkbox"
@@ -81,19 +105,19 @@
                                 Runtime
                             @endif
                         </th>
-                        @if(in_array($activeTab, ['pending', 'processing']))
+                        @if(in_array($activeTab, ['pending', 'processing', 'failed']))
                             <th class="w-20 px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                         @endif
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                     @foreach($jobs as $job)
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 {{ in_array($activeTab, ['pending', 'processing']) ? '' : 'cursor-pointer' }}"
-                            @if(!in_array($activeTab, ['pending']) && ($job['status'] ?? '') !== 'pending')
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 {{ in_array($activeTab, ['pending', 'processing', 'failed']) ? '' : 'cursor-pointer' }}"
+                            @if(!in_array($activeTab, ['pending', 'failed']) && ($job['status'] ?? '') !== 'pending')
                                 onclick="Livewire.navigate('{{ route('dawn.jobs.show', ['id' => $job['id'] ?? '']) }}')"
                             @endif
                         >
-                            @if(in_array($activeTab, ['pending', 'processing']))
+                            @if(in_array($activeTab, ['pending', 'processing', 'failed']))
                                 <td class="w-10 px-4 py-4" onclick="event.stopPropagation()">
                                     <input
                                         type="checkbox"
@@ -126,7 +150,7 @@
                                     —
                                 @endif
                             </td>
-                            @if(in_array($activeTab, ['pending', 'processing']))
+                            @if(in_array($activeTab, ['pending', 'processing', 'failed']))
                                 <td class="w-20 px-4 py-4 text-right" onclick="event.stopPropagation()">
                                     @if($activeTab === 'pending')
                                         <button
@@ -145,6 +169,14 @@
                                             title="Stop job"
                                         >
                                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"/></svg>
+                                        </button>
+                                    @elseif($activeTab === 'failed' && ($job['status'] ?? '') !== 'retried')
+                                        <button
+                                            wire:click="retryJob('{{ $job['id'] ?? '' }}')"
+                                            class="text-dawn-600 hover:text-dawn-700 dark:text-dawn-400 dark:hover:text-dawn-300 transition-colors"
+                                            title="Retry job"
+                                        >
+                                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
                                         </button>
                                     @endif
                                 </td>

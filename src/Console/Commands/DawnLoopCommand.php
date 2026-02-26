@@ -88,7 +88,7 @@ class DawnLoopCommand extends Command
                     'status' => 'failed',
                     'exception' => 'Invalid job payload: missing data.command',
                     'trace' => '',
-                    'memory' => memory_get_usage() - $startMemory,
+                    'memory' => max(0, memory_get_usage() - $startMemory),
                     'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
                 ];
             }
@@ -116,7 +116,7 @@ class DawnLoopCommand extends Command
                 return [
                     'status' => 'released',
                     'delay' => $job->releaseDelay,
-                    'memory' => memory_get_usage() - $startMemory,
+                    'memory' => max(0, memory_get_usage() - $startMemory),
                     'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
                     'logs' => array_slice($capturedLogs, 0, 50),
                 ];
@@ -124,7 +124,7 @@ class DawnLoopCommand extends Command
 
             return [
                 'status' => 'complete',
-                'memory' => memory_get_usage() - $startMemory,
+                'memory' => max(0, memory_get_usage() - $startMemory),
                 'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
                 'logs' => array_slice($capturedLogs, 0, 50),
             ];
@@ -153,7 +153,7 @@ class DawnLoopCommand extends Command
                 'status' => 'failed',
                 'exception' => $exceptionMsg,
                 'trace' => $trace,
-                'memory' => memory_get_usage() - $startMemory,
+                'memory' => max(0, memory_get_usage() - $startMemory),
                 'runtime_ms' => $runtimeMs,
                 'logs' => array_slice($capturedLogs ?? [], 0, 50),
             ];

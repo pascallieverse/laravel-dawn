@@ -55,6 +55,36 @@ class Index extends Component
     }
 
     /**
+     * Retry a single failed job.
+     */
+    public function retryJob(string $id): void
+    {
+        app(JobRepository::class)->retry($id);
+        $this->selected = array_values(array_diff($this->selected, [$id]));
+    }
+
+    /**
+     * Retry all selected failed jobs.
+     */
+    public function retrySelected(): void
+    {
+        $jobRepo = app(JobRepository::class);
+        foreach ($this->selected as $id) {
+            $jobRepo->retry($id);
+        }
+        $this->selected = [];
+    }
+
+    /**
+     * Retry all failed jobs.
+     */
+    public function retryAllFailed(): void
+    {
+        app(JobRepository::class)->retryAll();
+        $this->selected = [];
+    }
+
+    /**
      * Cancel a single pending job by removing it from the queue list.
      * Iterates in chunks to avoid loading the entire queue into memory.
      */
