@@ -83,6 +83,18 @@ class Dashboard extends Component
             }
         }
 
+        // Get per-queue throughput for wait time estimation
+        $throughput = $metrics->getRecentThroughput(5);
+        $queueThroughput = [];
+        foreach ($throughput as $queue => $entries) {
+            $totalCount = 0;
+            foreach ($entries as $entry) {
+                $totalCount += $entry['count'] ?? 0;
+            }
+            $minuteCount = count($entries);
+            $queueThroughput[$queue] = $minuteCount > 0 ? $totalCount / $minuteCount : 0;
+        }
+
         // Calculate pending count and workload from unique queues
         $workload = [];
         $waitingInQueue = 0;
@@ -91,11 +103,16 @@ class Dashboard extends Component
             $delayedSize = (int) $dawnConn->zcard('queues:' . $queue . ':delayed');
             $length = $queueSize + $delayedSize;
             $waitingInQueue += $length;
+
+            // Estimate wait: queue length / jobs per minute for this queue
+            $jpm = $queueThroughput[$queue] ?? 0;
+            $waitSeconds = $jpm > 0 ? (int) round(($length / $jpm) * 60) : 0;
+
             $workload[] = [
                 'queue' => $queue,
                 'length' => $length,
                 'processes' => $processes,
-                'wait' => 0,
+                'wait' => $waitSeconds,
             ];
         }
 

@@ -107,7 +107,7 @@ class DawnMetricsRepository implements MetricsRepository
 
         for ($i = $minutes - 1; $i >= 0; $i--) {
             $ts = $now - ($i * 60);
-            $minuteKey = date('YmdHi', $ts);
+            $minuteKey = gmdate('YmdHi', $ts);
             $throughputKey = $this->prefix . 'throughput:' . $minuteKey;
 
             $data = $conn->hgetall($throughputKey);

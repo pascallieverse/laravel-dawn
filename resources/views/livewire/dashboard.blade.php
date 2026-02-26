@@ -67,7 +67,7 @@
                             <td class="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{{ $item['queue'] }}</td>
                             <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ $item['processes'] }}</td>
                             <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ number_format($item['length']) }}</td>
-                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ $item['wait'] }}s</td>
+                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{{ $this->formatWait($item['wait']) }}</td>
                         </tr>
                     @endforeach
                 </tbody>

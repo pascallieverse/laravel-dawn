@@ -34,6 +34,27 @@ trait FormatsValues
         return Carbon::parse($timestamp)->toDateTimeString();
     }
 
+    protected function formatWait(int $seconds): string
+    {
+        if ($seconds <= 0) {
+            return '-';
+        }
+
+        if ($seconds < 60) {
+            return $seconds . 's';
+        }
+
+        if ($seconds < 3600) {
+            $m = (int) floor($seconds / 60);
+            $s = $seconds % 60;
+            return $s > 0 ? "{$m}m {$s}s" : "{$m}m";
+        }
+
+        $h = (int) floor($seconds / 3600);
+        $m = (int) floor(($seconds % 3600) / 60);
+        return $m > 0 ? "{$h}h {$m}m" : "{$h}h";
+    }
+
     protected function formatNumber(mixed $value): string
     {
         return number_format((int) $value);
