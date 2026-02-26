@@ -47,58 +47,80 @@ class Dashboard extends Component
         $allSupervisors = $supervisors->all();
         $totalProcesses = collect($allSupervisors)->sum(fn ($s) => $s['processes'] ?? 0);
 
-        $status = $this->getStatus($masters);
+        $status = $this->getStatus($masters, $supervisors);
         $jobsPerMinute = $this->getJobsPerMinute($metrics);
 
-        $workload = [];
-        $waitingInQueue = 0;
+        // Collect unique queues and per-queue process counts from all supervisors
+        $dawnConn = $redis->connection('dawn');
+        $queueProcesses = [];
         foreach ($allSupervisors as $supervisor) {
+            // Use pools if available for process counts
             $pools = $supervisor['pools'] ?? [];
             foreach ($pools as $queue => $pool) {
-                $queueSize = (int) $redis->connection('dawn')->llen('queues:' . $queue);
-                $delayedSize = (int) $redis->connection('dawn')->zcard('queues:' . $queue . ':delayed');
-                $waitingInQueue += $queueSize + $delayedSize;
-                $workload[] = [
-                    'queue' => $queue,
-                    'length' => $queueSize + $delayedSize,
-                    'processes' => $pool['workers'] ?? 0,
-                    'wait' => 0,
-                ];
+                $queueProcesses[$queue] = ($queueProcesses[$queue] ?? 0) + ($pool['workers'] ?? 0);
+            }
+            // Also add queues from config that may not have pools yet
+            foreach (($supervisor['queues'] ?? []) as $queue) {
+                if (! isset($queueProcesses[$queue])) {
+                    $queueProcesses[$queue] = 0;
+                }
             }
         }
 
-        // Pending jobs: jobs waiting in queue lists + delayed sets
+        // When supervisors haven't registered yet (or keys expired),
+        // fall back to queue names from dawn config so workload/pending
+        // are still visible even without live supervisor keys in Redis
+        if (empty($queueProcesses)) {
+            $configQueues = $this->getQueueNamesFromConfig();
+            foreach ($configQueues as $queue) {
+                $queueProcesses[$queue] = 0;
+            }
+        }
+
+        // Calculate pending count and workload from unique queues
+        $workload = [];
+        $waitingInQueue = 0;
+        foreach ($queueProcesses as $queue => $processes) {
+            $queueSize = (int) $dawnConn->llen('queues:' . $queue);
+            $delayedSize = (int) $dawnConn->zcard('queues:' . $queue . ':delayed');
+            $length = $queueSize + $delayedSize;
+            $waitingInQueue += $length;
+            $workload[] = [
+                'queue' => $queue,
+                'length' => $length,
+                'processes' => $processes,
+                'wait' => 0,
+            ];
+        }
+
+        // Pending jobs: jobs waiting in queue lists + delayed sets (use unique queues)
         $pendingJobsList = collect();
-        $dawnConn = $redis->connection('dawn');
-        foreach ($allSupervisors as $supervisor) {
-            foreach (($supervisor['queues'] ?? []) as $queue) {
-                $raw = $dawnConn->lrange('queues:' . $queue, 0, 9);
-                foreach ($raw as $payload) {
+        foreach (array_keys($queueProcesses) as $queue) {
+            $raw = $dawnConn->lrange('queues:' . $queue, 0, 9);
+            foreach ($raw as $payload) {
+                $data = json_decode($payload, true);
+                if (! $data) continue;
+                $pendingJobsList->push([
+                    'id' => $data['id'] ?? $data['uuid'] ?? '-',
+                    'name' => class_basename($data['displayName'] ?? $data['job'] ?? 'Unknown'),
+                    'queue' => $queue,
+                    'status' => 'pending',
+                    'pushed_at' => isset($data['pushedAt']) ? (float) $data['pushedAt'] : null,
+                ]);
+            }
+            $delayed = $dawnConn->zrangebyscore('queues:' . $queue . ':delayed', '-inf', '+inf', ['withscores' => true, 'limit' => [0, 10]]);
+            if (is_array($delayed)) {
+                foreach ($delayed as $payload => $score) {
                     $data = json_decode($payload, true);
                     if (! $data) continue;
                     $pendingJobsList->push([
                         'id' => $data['id'] ?? $data['uuid'] ?? '-',
                         'name' => class_basename($data['displayName'] ?? $data['job'] ?? 'Unknown'),
                         'queue' => $queue,
-                        'status' => 'pending',
+                        'status' => 'delayed',
+                        'delayed_until' => (float) $score,
                         'pushed_at' => isset($data['pushedAt']) ? (float) $data['pushedAt'] : null,
                     ]);
-                }
-                $delayed = $dawnConn->zrangebyscore('queues:' . $queue . ':delayed', '-inf', '+inf', ['withscores' => true, 'limit' => [0, 10]]);
-                if (is_array($delayed)) {
-                    foreach ($delayed as $payload => $score) {
-                        $data = json_decode($payload, true);
-                        if (! $data) continue;
-                        $remaining = (float) $score - now()->timestamp;
-                        $pendingJobsList->push([
-                            'id' => $data['id'] ?? $data['uuid'] ?? '-',
-                            'name' => class_basename($data['displayName'] ?? $data['job'] ?? 'Unknown'),
-                            'queue' => $queue,
-                            'status' => 'delayed',
-                            'delayed_until' => (float) $score,
-                            'pushed_at' => isset($data['pushedAt']) ? (float) $data['pushedAt'] : null,
-                        ]);
-                    }
                 }
             }
         }
@@ -150,33 +172,98 @@ class Dashboard extends Component
         ]);
     }
 
-    protected function getStatus(MasterSupervisorRepository $masters): string
+    protected function getStatus(MasterSupervisorRepository $masters, SupervisorRepository $supervisors): string
     {
         $all = $masters->all();
 
-        if (empty($all)) {
-            return 'inactive';
-        }
-
-        foreach ($all as $master) {
-            if (($master['status'] ?? '') === 'paused') {
-                return 'paused';
+        if (! empty($all)) {
+            foreach ($all as $master) {
+                if (($master['status'] ?? '') === 'paused') {
+                    return 'paused';
+                }
             }
+            return 'running';
         }
 
-        return 'running';
+        // Master key may have expired between heartbeats (30s TTL, 5s refresh).
+        // Check for live supervisor keys as a secondary signal — Rust writes
+        // both master and supervisor heartbeats, but supervisors are registered
+        // under the master name in a SET which may lag behind key expiry.
+        // Fall back to checking if ANY supervisor keys exist.
+        if (! empty($supervisors->all())) {
+            return 'running';
+        }
+
+        // Last resort: check for recent processing activity.
+        // If jobs are in pending_jobs (being processed by Rust), dawn is running
+        // even if master/supervisor registration keys have temporarily expired.
+        $conn = app(RedisFactory::class)->connection('dawn');
+        $prefix = app('config')->get('dawn.prefix', '');
+        if ($prefix === '' || $prefix === null) {
+            $appName = app('config')->get('app.name', 'Laravel');
+            $slug = preg_replace('/[^a-z0-9]+/', '_', strtolower($appName));
+            $prefix = trim($slug, '_') . '_dawn:';
+        }
+        if (! str_ends_with($prefix, ':')) {
+            $prefix .= ':';
+        }
+
+        $processingCount = (int) $conn->zcard($prefix . 'pending_jobs');
+        if ($processingCount > 0) {
+            return 'running';
+        }
+
+        return 'inactive';
     }
 
     protected function getJobsPerMinute(MetricsRepository $metrics): float
     {
-        $queues = $metrics->measuredQueues();
+        $throughput = $metrics->getRecentThroughput(5);
         $total = 0;
+        $minutes = 0;
 
-        foreach ($queues as $queue) {
-            $data = $metrics->getQueueMetrics($queue);
-            $total += $data['count'] ?? 0;
+        foreach ($throughput as $queue => $entries) {
+            foreach ($entries as $entry) {
+                $total += $entry['count'] ?? 0;
+            }
+            $minutes = max($minutes, count($entries));
         }
 
-        return round($total / max(1, 60), 2);
+        if ($minutes === 0) {
+            return 0;
+        }
+
+        return round($total / $minutes, 2);
+    }
+
+    /**
+     * Get queue names from dawn config as a fallback when supervisor
+     * keys are not available in Redis (e.g. between heartbeats).
+     */
+    protected function getQueueNamesFromConfig(): array
+    {
+        $queues = [];
+        $env = app()->environment();
+
+        // Check environment-specific overrides first, then defaults
+        $supervisors = config("dawn.environments.{$env}", []);
+        if (empty($supervisors)) {
+            $supervisors = config('dawn.defaults', []);
+        }
+
+        foreach ($supervisors as $supervisor) {
+            foreach ((array) ($supervisor['queue'] ?? ['default']) as $queue) {
+                $queues[$queue] = true;
+            }
+        }
+
+        // Also check defaults (in case env overrides don't specify queues)
+        foreach (config('dawn.defaults', []) as $supervisor) {
+            foreach ((array) ($supervisor['queue'] ?? ['default']) as $queue) {
+                $queues[$queue] = true;
+            }
+        }
+
+        return empty($queues) ? ['default'] : array_keys($queues);
     }
 }

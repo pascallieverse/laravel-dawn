@@ -187,13 +187,24 @@ class DawnJobRepository implements JobRepository
 
     public function countFailedPending(): int
     {
-        $ids = $this->connection()->zrange($this->prefix . 'failed_jobs', 0, -1);
+        $conn = $this->connection();
+        $ids = $conn->zrange($this->prefix . 'failed_jobs', 0, -1);
+
+        if (empty($ids)) {
+            return 0;
+        }
+
+        // Batch-fetch all job details with MGET
+        $jobKeys = array_map(fn ($id) => $this->prefix . 'job:' . $id, $ids);
+        $results = $conn->mget($jobKeys);
         $count = 0;
 
-        foreach ($ids as $id) {
-            $job = $this->find($id);
-            if ($job && ($job['status'] ?? '') !== 'retried') {
-                $count++;
+        foreach ($results as $raw) {
+            if ($raw) {
+                $job = json_decode($raw, true);
+                if ($job && ($job['status'] ?? '') !== 'retried') {
+                    $count++;
+                }
             }
         }
 
@@ -269,7 +280,8 @@ class DawnJobRepository implements JobRepository
     /**
      * Repair the failed_jobs ZSET by scanning recent_jobs for failed-status
      * jobs that are missing from failed_jobs (e.g. removed by old cleanup code).
-     * Runs at most once per request.
+     * Uses a Redis TTL lock so this runs at most once per minute across all requests.
+     * Within a single request, the in-memory flag prevents duplicate runs.
      */
     protected bool $failedIndexRepaired = false;
 
@@ -281,31 +293,69 @@ class DawnJobRepository implements JobRepository
         $this->failedIndexRepaired = true;
 
         $conn = $this->connection();
+        $lockKey = $this->prefix . 'repair_lock';
+
+        // Only run the expensive repair once per minute (across all requests)
+        if (! $conn->set($lockKey, '1', 'EX', 60, 'NX')) {
+            return;
+        }
+
         $failedKey = $this->prefix . 'failed_jobs';
         $recentKey = $this->prefix . 'recent_jobs';
 
-        // Get all recent job IDs with their scores
+        // Get recent job IDs with their scores
         $idsWithScores = $conn->zrevrange($recentKey, 0, 499, 'WITHSCORES');
 
         if (empty($idsWithScores)) {
             return;
         }
 
-        foreach ($idsWithScores as $id => $score) {
-            // Check if already in failed_jobs
-            $rank = $conn->zrank($failedKey, $id);
-            if ($rank !== null && $rank !== false) {
-                continue;
-            }
+        $ids = array_keys($idsWithScores);
 
-            // Check if this job has failed status
-            $job = $this->find($id);
-            if (! $job) {
-                $job = $this->findFailed($id);
-            }
+        // Batch-fetch all job details with MGET
+        $jobKeys = array_map(fn ($id) => $this->prefix . 'job:' . $id, $ids);
+        $results = $conn->mget($jobKeys);
 
-            if ($job && in_array($job['status'] ?? '', ['failed', 'retried'])) {
-                $conn->zadd($failedKey, $score, $id);
+        // Collect IDs that need fallback to failed: keys
+        $missingIds = [];
+        $jobMap = [];
+
+        foreach ($ids as $i => $id) {
+            $raw = $results[$i] ?? null;
+            if ($raw) {
+                $job = json_decode($raw, true);
+                if ($job) {
+                    $jobMap[$id] = $job;
+                    continue;
+                }
+            }
+            $missingIds[] = $id;
+        }
+
+        // Batch fallback: MGET dawn:failed:{id}
+        if (! empty($missingIds)) {
+            $failedKeys = array_map(fn ($id) => $this->prefix . 'failed:' . $id, $missingIds);
+            $failedResults = $conn->mget($failedKeys);
+            foreach ($missingIds as $i => $id) {
+                $raw = $failedResults[$i] ?? null;
+                if ($raw) {
+                    $job = json_decode($raw, true);
+                    if ($job) {
+                        $jobMap[$id] = $job;
+                    }
+                }
+            }
+        }
+
+        // Add any failed/retried jobs missing from failed_jobs ZSET
+        foreach ($jobMap as $id => $job) {
+            if (in_array($job['status'] ?? '', ['failed', 'retried'])) {
+                $score = $idsWithScores[$id] ?? 0;
+                // Check if already in failed_jobs before adding
+                $rank = $conn->zrank($failedKey, $id);
+                if ($rank === null || $rank === false) {
+                    $conn->zadd($failedKey, $score, $id);
+                }
             }
         }
     }
@@ -349,6 +399,9 @@ class DawnJobRepository implements JobRepository
      * Over-fetches from the ZSET to compensate for entries whose detail
      * keys (dawn:job:{id}) have expired. For failed job sets, falls back
      * to dawn:failed:{id} which has a longer TTL.
+     *
+     * Uses MGET to batch-fetch all job details in a single round-trip
+     * instead of individual GET calls per job.
      */
     protected function getJobsFromSortedSet(string $key, int $offset, int $limit): array
     {
@@ -358,30 +411,58 @@ class DawnJobRepository implements JobRepository
         $cursor = $offset;
         $batchSize = $limit;
         $maxPasses = 3;
+        $conn = $this->connection();
 
         for ($pass = 0; $pass < $maxPasses && count($jobs) < $limit; $pass++) {
-            $ids = $this->connection()->zrevrange($fullKey, $cursor, $cursor + $batchSize - 1);
+            $ids = $conn->zrevrange($fullKey, $cursor, $cursor + $batchSize - 1);
 
             if (empty($ids)) {
                 break;
             }
 
-            foreach ($ids as $id) {
-                $job = $this->find($id);
+            // Batch-fetch all job details with MGET
+            $jobKeys = array_map(fn ($id) => $this->prefix . 'job:' . $id, $ids);
+            $results = $conn->mget($jobKeys);
 
-                // For failed job sets, fall back to dawn:failed:{id} (7d TTL)
-                // when dawn:job:{id} (24h TTL) has expired
-                if (! $job && $isFailedSet) {
-                    $job = $this->findFailed($id);
+            // For failed sets, collect IDs that had no job: key for fallback
+            $missingIds = [];
+            $idToIndex = [];
+
+            foreach ($ids as $i => $id) {
+                $raw = $results[$i] ?? null;
+                if ($raw) {
+                    $job = json_decode($raw, true);
                     if ($job) {
-                        $job['status'] = $job['status'] ?? 'failed';
+                        $jobs[] = $job;
+                        if (count($jobs) >= $limit) {
+                            break;
+                        }
+                        continue;
                     }
                 }
 
-                if ($job) {
-                    $jobs[] = $job;
-                    if (count($jobs) >= $limit) {
-                        break;
+                if ($isFailedSet) {
+                    $missingIds[] = $id;
+                    $idToIndex[$id] = count($jobs); // placeholder index
+                }
+            }
+
+            // Batch fallback for failed sets: MGET dawn:failed:{id}
+            if (! empty($missingIds) && count($jobs) < $limit) {
+                $failedKeys = array_map(fn ($id) => $this->prefix . 'failed:' . $id, $missingIds);
+                $failedResults = $conn->mget($failedKeys);
+
+                foreach ($missingIds as $i => $id) {
+                    $raw = $failedResults[$i] ?? null;
+                    if ($raw) {
+                        $job = json_decode($raw, true);
+                        if ($job) {
+                            $job['status'] = $job['status'] ?? 'failed';
+                            $jobs[] = $job;
+                            if (count($jobs) >= $limit) {
+                                break;
+                            }
+                        }
                     }
                 }
             }

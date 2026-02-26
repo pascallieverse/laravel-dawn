@@ -56,19 +56,33 @@ class Index extends Component
 
     /**
      * Cancel a single pending job by removing it from the queue list.
+     * Iterates in chunks to avoid loading the entire queue into memory.
      */
     public function cancelPendingJob(string $id, string $queue): void
     {
         $redis = app(RedisFactory::class)->connection('dawn');
-        $raw = $redis->lrange('queues:' . $queue, 0, -1);
+        $queueKey = 'queues:' . $queue;
+        $chunkSize = 100;
+        $offset = 0;
 
-        foreach ($raw as $payload) {
-            $data = json_decode($payload, true);
-            $jobId = $data['id'] ?? $data['uuid'] ?? null;
-            if ($jobId === $id) {
-                $redis->lrem('queues:' . $queue, 1, $payload);
+        while (true) {
+            $raw = $redis->lrange($queueKey, $offset, $offset + $chunkSize - 1);
+
+            if (empty($raw)) {
                 break;
             }
+
+            foreach ($raw as $payload) {
+                $data = json_decode($payload, true);
+                $jobId = $data['id'] ?? $data['uuid'] ?? null;
+                if ($jobId === $id) {
+                    $redis->lrem($queueKey, 1, $payload);
+                    $this->selected = array_values(array_diff($this->selected, [$id]));
+                    return;
+                }
+            }
+
+            $offset += $chunkSize;
         }
 
         $this->selected = array_values(array_diff($this->selected, [$id]));
@@ -99,7 +113,10 @@ class Index extends Component
     public function cancelSelected(): void
     {
         if ($this->activeTab === 'pending') {
-            $allPending = $this->getPendingFromQueues(0, 1000);
+            // For pending jobs, we need the queue name to remove from.
+            // Fetch current page of pending jobs which should contain selections.
+            $offset = ($this->page - 1) * $this->perPage;
+            $allPending = $this->getPendingFromQueues($offset, $this->perPage);
             foreach ($allPending as $job) {
                 if (in_array($job['id'], $this->selected)) {
                     $this->cancelPendingJob($job['id'], $job['queue']);
@@ -218,19 +235,26 @@ class Index extends Component
     /**
      * Get all jobs: merge tracked jobs (from dawn:recent_jobs) with
      * pending/delayed jobs still sitting in the queue lists.
+     * Fetches only enough from each source to fill the requested page.
      */
     protected function getAllJobs(JobRepository $jobRepo, int $offset, int $limit): array
     {
+        // Fetch a window large enough to cover offset+limit from each source
+        $fetchSize = $offset + $limit;
+
         // Jobs already tracked by Rust (reserved, completed, failed, retrying)
-        $tracked = $jobRepo->getRecent(0, 1000);
-        $trackedIds = array_column($tracked, 'id');
+        $tracked = $jobRepo->getRecent(0, $fetchSize);
+        $trackedIds = [];
+        foreach ($tracked as $job) {
+            $trackedIds[$job['id'] ?? ''] = true;
+        }
 
         // Pending + delayed jobs from queue lists (not yet seen by Rust)
-        $pending = $this->getPendingFromQueues(0, 1000);
+        $pending = $this->getPendingFromQueues(0, $fetchSize);
 
         // Merge, avoiding duplicates (pending jobs may already be in recent_jobs)
         foreach ($pending as $job) {
-            if (! in_array($job['id'], $trackedIds)) {
+            if (! isset($trackedIds[$job['id'] ?? ''])) {
                 $tracked[] = $job;
             }
         }
@@ -262,53 +286,114 @@ class Index extends Component
 
     /**
      * Read jobs waiting in queue lists (not yet picked up by Rust).
+     * Uses bounded LRANGE with offset/limit instead of loading entire queues.
      */
     protected function getPendingFromQueues(int $offset = 0, int $limit = 50): array
     {
         $redis = app(RedisFactory::class)->connection('dawn');
         $queueNames = $this->getQueueNames();
 
-        $allJobs = [];
+        // To paginate across multiple queues, we need to know how many jobs
+        // are in each queue so we can skip the right number for offset.
+        $queueSizes = [];
         foreach ($queueNames as $queue) {
+            $queueSizes[$queue] = [
+                'ready' => (int) $redis->llen('queues:' . $queue),
+                'delayed' => (int) $redis->zcard('queues:' . $queue . ':delayed'),
+            ];
+        }
+
+        $allJobs = [];
+        $skipped = 0;
+        $needed = $limit;
+
+        foreach ($queueNames as $queue) {
+            if ($needed <= 0) {
+                break;
+            }
+
+            $readyCount = $queueSizes[$queue]['ready'];
+            $delayedCount = $queueSizes[$queue]['delayed'];
+            $queueTotal = $readyCount + $delayedCount;
+
+            // Skip this entire queue if offset hasn't been consumed yet
+            if ($skipped + $queueTotal <= $offset) {
+                $skipped += $queueTotal;
+                continue;
+            }
+
             // Ready jobs (in the queue list)
-            $raw = $redis->lrange('queues:' . $queue, 0, -1);
-            foreach ($raw as $payload) {
-                $data = json_decode($payload, true);
-                if (! $data) {
-                    continue;
+            if ($readyCount > 0 && $skipped < $offset + $limit) {
+                $readyOffset = max(0, $offset - $skipped);
+                $readyLimit = min($needed, $readyCount - $readyOffset);
+
+                if ($readyLimit > 0) {
+                    $raw = $redis->lrange('queues:' . $queue, $readyOffset, $readyOffset + $readyLimit - 1);
+                    foreach ($raw as $payload) {
+                        $data = json_decode($payload, true);
+                        if (! $data) {
+                            continue;
+                        }
+                        $allJobs[] = [
+                            'id' => $data['id'] ?? $data['uuid'] ?? '-',
+                            'name' => $data['displayName'] ?? $data['job'] ?? 'Unknown',
+                            'queue' => $queue,
+                            'status' => 'pending',
+                            'pushed_at' => $data['pushedAt'] ?? null,
+                            'runtime' => null,
+                        ];
+                        $needed--;
+                        if ($needed <= 0) {
+                            break;
+                        }
+                    }
                 }
-                $allJobs[] = [
-                    'id' => $data['id'] ?? $data['uuid'] ?? '-',
-                    'name' => $data['displayName'] ?? $data['job'] ?? 'Unknown',
-                    'queue' => $queue,
-                    'status' => 'pending',
-                    'pushed_at' => $data['pushedAt'] ?? null,
-                    'runtime' => null,
-                ];
+            }
+
+            $skipped += $readyCount;
+
+            if ($needed <= 0) {
+                break;
             }
 
             // Delayed jobs (in the delayed sorted set)
-            $delayed = $redis->zrangebyscore('queues:' . $queue . ':delayed', '-inf', '+inf', ['withscores' => true]);
-            if (is_array($delayed)) {
-                foreach ($delayed as $payload => $score) {
-                    $data = json_decode($payload, true);
-                    if (! $data) {
-                        continue;
+            if ($delayedCount > 0) {
+                $delayedOffset = max(0, $offset - $skipped);
+                $delayedLimit = min($needed, $delayedCount - $delayedOffset);
+
+                if ($delayedLimit > 0) {
+                    $delayed = $redis->zrangebyscore('queues:' . $queue . ':delayed', '-inf', '+inf', [
+                        'withscores' => true,
+                        'limit' => [$delayedOffset, $delayedLimit],
+                    ]);
+                    if (is_array($delayed)) {
+                        foreach ($delayed as $payload => $score) {
+                            $data = json_decode($payload, true);
+                            if (! $data) {
+                                continue;
+                            }
+                            $allJobs[] = [
+                                'id' => $data['id'] ?? $data['uuid'] ?? '-',
+                                'name' => $data['displayName'] ?? $data['job'] ?? 'Unknown',
+                                'queue' => $queue,
+                                'status' => 'delayed',
+                                'pushed_at' => $data['pushedAt'] ?? null,
+                                'delayed_until' => (float) $score,
+                                'runtime' => null,
+                            ];
+                            $needed--;
+                            if ($needed <= 0) {
+                                break;
+                            }
+                        }
                     }
-                    $allJobs[] = [
-                        'id' => $data['id'] ?? $data['uuid'] ?? '-',
-                        'name' => $data['displayName'] ?? $data['job'] ?? 'Unknown',
-                        'queue' => $queue,
-                        'status' => 'delayed',
-                        'pushed_at' => $data['pushedAt'] ?? null,
-                        'delayed_until' => (float) $score,
-                        'runtime' => null,
-                    ];
                 }
             }
+
+            $skipped += $delayedCount;
         }
 
-        return array_slice($allJobs, $offset, $limit);
+        return $allJobs;
     }
 
     /**
@@ -329,7 +414,7 @@ class Index extends Component
     }
 
     /**
-     * Get all queue names from supervisor config, falling back to ['default'].
+     * Get all queue names from supervisor config, falling back to dawn config.
      */
     protected function getQueueNames(): array
     {
@@ -339,6 +424,26 @@ class Index extends Component
         foreach ($supervisors as $supervisor) {
             foreach (($supervisor['queues'] ?? []) as $queue) {
                 $queues[$queue] = true;
+            }
+        }
+
+        // When supervisor keys aren't in Redis (between heartbeats or
+        // worker just started), fall back to queue names from dawn config
+        if (empty($queues)) {
+            $env = app()->environment();
+            $configSupervisors = config("dawn.environments.{$env}", []);
+            if (empty($configSupervisors)) {
+                $configSupervisors = config('dawn.defaults', []);
+            }
+            foreach ($configSupervisors as $sup) {
+                foreach ((array) ($sup['queue'] ?? ['default']) as $queue) {
+                    $queues[$queue] = true;
+                }
+            }
+            foreach (config('dawn.defaults', []) as $sup) {
+                foreach ((array) ($sup['queue'] ?? ['default']) as $queue) {
+                    $queues[$queue] = true;
+                }
             }
         }
 
