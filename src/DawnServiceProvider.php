@@ -28,7 +28,7 @@ class DawnServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__ . '/../config/dawn.php', 'dawn');
+        $this->mergeConfigFrom(__DIR__.'/../config/dawn.php', 'dawn');
 
         $this->registerRedisConnection();
         $this->registerQueueConnection();
@@ -128,10 +128,10 @@ class DawnServiceProvider extends ServiceProvider
 
         if ($prefix === null || $prefix === '') {
             $appName = Str::slug(config('app.name', 'laravel'), '_');
-            $prefix = $appName . '_dawn:';
+            $prefix = $appName.'_dawn:';
         }
 
-        return str_ends_with($prefix, ':') ? $prefix : $prefix . ':';
+        return str_ends_with($prefix, ':') ? $prefix : $prefix.':';
     }
 
     /**
@@ -196,7 +196,7 @@ class DawnServiceProvider extends ServiceProvider
             'prefix' => config('dawn.path', 'dawn'),
             'middleware' => config('dawn.middleware', ['web']),
         ], function () {
-            $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
+            $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         });
     }
 
@@ -205,7 +205,7 @@ class DawnServiceProvider extends ServiceProvider
      */
     protected function registerResources(): void
     {
-        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'dawn');
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'dawn');
     }
 
     /**
@@ -216,8 +216,8 @@ class DawnServiceProvider extends ServiceProvider
         Livewire::addNamespace(
             namespace: 'dawn',
             classNamespace: 'Dawn\\Livewire',
-            classPath: __DIR__ . '/Livewire',
-            classViewPath: __DIR__ . '/../resources/views/livewire',
+            classPath: __DIR__.'/Livewire',
+            classViewPath: __DIR__.'/../resources/views/livewire',
         );
     }
 
@@ -240,6 +240,7 @@ class DawnServiceProvider extends ServiceProvider
                 Console\Commands\SnapshotCommand::class,
                 Console\Commands\ClearMetricsCommand::class,
                 Console\Commands\PurgeCommand::class,
+                Console\Commands\RecoverOrphansCommand::class,
                 Console\Commands\GenerateServiceCommand::class,
             ]);
         }
@@ -264,15 +265,15 @@ class DawnServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__ . '/../config/dawn.php' => config_path('dawn.php'),
+                __DIR__.'/../config/dawn.php' => config_path('dawn.php'),
             ], 'dawn-config');
 
             $this->publishes([
-                __DIR__ . '/../public' => public_path('vendor/dawn'),
+                __DIR__.'/../public' => public_path('vendor/dawn'),
             ], 'dawn-assets');
 
             $this->publishes([
-                __DIR__ . '/../stubs/DawnServiceProvider.stub' => app_path('Providers/DawnServiceProvider.php'),
+                __DIR__.'/../stubs/DawnServiceProvider.stub' => app_path('Providers/DawnServiceProvider.php'),
             ], 'dawn-provider');
         }
     }

@@ -98,4 +98,16 @@ interface JobRepository
      * @return array<int, array{timestamp: string, text: string}>
      */
     public function getJobLogs(string $id): array;
+
+    /**
+     * Recover orphaned jobs stuck in pending_jobs ZSET.
+     *
+     * When a worker is killed (e.g. timeout), it can't report failure back
+     * to the Rust supervisor. These jobs stay "reserved" in pending_jobs
+     * forever. This method finds them and either retries or marks as failed.
+     *
+     * @param  int  $graceSeconds  Extra seconds beyond the job's reserved_at score before considering it orphaned
+     * @return array{recovered: int, retried: int, failed: int}
+     */
+    public function recoverOrphanedJobs(int $graceSeconds = 300): array;
 }
