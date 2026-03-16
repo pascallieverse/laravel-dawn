@@ -21,6 +21,16 @@ class ExportConfigCommand extends Command
         // Merge defaults with environment-specific overrides
         $supervisors = $this->resolveSupervisors($config, $environment);
 
+        // Prefix queue names so each app has isolated queue keys in Redis
+        $queuePrefix = DawnServiceProvider::resolveQueuePrefix();
+        foreach ($supervisors as &$supervisor) {
+            $supervisor['queues'] = array_map(
+                fn (string $q) => $queuePrefix . $q,
+                $supervisor['queues'],
+            );
+        }
+        unset($supervisor);
+
         $export = [
             'app_name' => config('app.name', 'Laravel'),
             'prefix' => DawnServiceProvider::resolvePrefix(),

@@ -126,7 +126,8 @@ class DawnJobRepository implements JobRepository
                 // "pending" tab immediately (reads directly from queue lists).
                 // When Rust picks it up, it adds it to pending_jobs/recent_jobs
                 // ZSETs with status "reserved".
-                $conn->rpush('queues:'.$queue, [$encoded]);
+                $queuePrefix = \Dawn\DawnServiceProvider::resolveQueuePrefix();
+                $conn->rpush('queues:' . $queuePrefix . $queue, [$encoded]);
 
                 // Pre-register in recent_jobs so it's visible in the
                 // dashboard's recent jobs list. Do NOT add to pending_jobs —
@@ -460,7 +461,8 @@ class DawnJobRepository implements JobRepository
                     $encoded = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
 
                     if ($encoded !== false) {
-                        $conn->rpush('queues:'.$queueName, [$encoded]);
+                        $queuePrefix = \Dawn\DawnServiceProvider::resolveQueuePrefix();
+                        $conn->rpush('queues:' . $queuePrefix . $queueName, [$encoded]);
 
                         // Update job status to show it was recovered
                         $updatedJob = json_encode(array_merge($jobData ?? [], [

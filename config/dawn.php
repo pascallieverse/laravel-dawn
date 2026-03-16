@@ -59,6 +59,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Queue Prefix
+    |--------------------------------------------------------------------------
+    |
+    | Prefix for queue keys in Redis. By default this is derived from your
+    | application name so multiple apps can share the same Redis server
+    | without workers stealing each other's jobs.
+    |
+    */
+
+    'queue_prefix' => env('DAWN_QUEUE_PREFIX', null),
+
+    /*
+    |--------------------------------------------------------------------------
     | Queue Workers
     |--------------------------------------------------------------------------
     |

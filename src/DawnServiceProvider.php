@@ -47,6 +47,7 @@ class DawnServiceProvider extends ServiceProvider
         $this->registerResources();
         $this->registerLivewireComponents();
         $this->registerCommands();
+        $this->registerSchedule();
         $this->registerQueueConnector();
         $this->registerPublishing();
     }
@@ -132,6 +133,24 @@ class DawnServiceProvider extends ServiceProvider
         }
 
         return str_ends_with($prefix, ':') ? $prefix : $prefix.':';
+    }
+
+    /**
+     * Resolve the queue name prefix to isolate queues per application.
+     * Multiple apps sharing the same Redis instance need unique queue keys
+     * to prevent workers from stealing each other's jobs.
+     */
+    public static function resolveQueuePrefix(): string
+    {
+        $prefix = config('dawn.queue_prefix');
+
+        if ($prefix === null || $prefix === '') {
+            $appName = Str::slug(config('app.name', 'laravel'), '_');
+
+            return $appName . ':';
+        }
+
+        return str_ends_with($prefix, ':') ? $prefix : $prefix . ':';
     }
 
     /**
@@ -240,10 +259,21 @@ class DawnServiceProvider extends ServiceProvider
                 Console\Commands\SnapshotCommand::class,
                 Console\Commands\ClearMetricsCommand::class,
                 Console\Commands\PurgeCommand::class,
+                Console\Commands\PruneBatchesCommand::class,
                 Console\Commands\RecoverOrphansCommand::class,
                 Console\Commands\GenerateServiceCommand::class,
             ]);
         }
+    }
+
+    /**
+     * Register the scheduled tasks for batch pruning.
+     */
+    protected function registerSchedule(): void
+    {
+        $this->app->afterResolving(\Illuminate\Console\Scheduling\Schedule::class, function ($schedule) {
+            $schedule->command('dawn:prune-batches')->hourly();
+        });
     }
 
     /**

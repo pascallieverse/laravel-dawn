@@ -20,9 +20,13 @@ class DawnQueue extends RedisQueue implements QueueContract
 
     /**
      * Get the queue or return the default.
+     * Includes the app-specific queue prefix to isolate queues per application
+     * when multiple apps share the same Redis instance.
      */
     public function getQueue($queue): string
     {
-        return 'queues:' . ($queue ?: $this->default);
+        $prefix = DawnServiceProvider::resolveQueuePrefix();
+
+        return 'queues:' . $prefix . ($queue ?: $this->default);
     }
 }
