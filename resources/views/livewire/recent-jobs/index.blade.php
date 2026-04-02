@@ -112,8 +112,10 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                     @foreach($jobs as $job)
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 {{ in_array($activeTab, ['pending', 'processing', 'failed']) ? '' : 'cursor-pointer' }}"
-                            @if(!in_array($activeTab, ['pending', 'failed']) && ($job['status'] ?? '') !== 'pending')
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 {{ $activeTab === 'pending' ? '' : 'cursor-pointer' }}"
+                            @if($activeTab === 'failed')
+                                onclick="Livewire.navigate('{{ route('dawn.failed.show', ['id' => $job['id'] ?? '']) }}')"
+                            @elseif($activeTab !== 'pending' && ($job['status'] ?? '') !== 'pending')
                                 onclick="Livewire.navigate('{{ route('dawn.jobs.show', ['id' => $job['id'] ?? '']) }}')"
                             @endif
                         >
