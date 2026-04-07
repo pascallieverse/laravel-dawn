@@ -5,6 +5,7 @@ namespace Dawn\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class PruneBatchesCommand extends Command
 {
@@ -16,6 +17,12 @@ class PruneBatchesCommand extends Command
 
     public function handle(): int
     {
+        if (! Schema::hasTable('job_batches')) {
+            $this->info('Skipping: job_batches table does not exist (job batching not enabled).');
+
+            return 0;
+        }
+
         $hours = (int) $this->option('hours');
         $dryRun = (bool) $this->option('dry-run');
         $cutoff = now()->subHours($hours)->timestamp;
