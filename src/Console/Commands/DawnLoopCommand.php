@@ -32,9 +32,13 @@ class DawnLoopCommand extends Command
             return 1;
         }
 
-        // Signal to Rust that we're ready to receive jobs
-        fwrite(STDOUT, json_encode(['ready' => true]) . "\n");
-        fflush(STDOUT);
+        // Signal to Rust that we're ready to receive jobs. If the supervisor is
+        // already gone there is nobody to work for: exit quietly.
+        if (! $this->writeLine(json_encode(['ready' => true]))) {
+            fclose($stdin);
+
+            return 0;
+        }
 
         // Read job payloads line by line from stdin
         while (($line = fgets($stdin)) !== false) {
@@ -59,13 +63,46 @@ class DawnLoopCommand extends Command
                 ]);
             }
 
-            fwrite(STDOUT, $json . "\n");
-            fflush(STDOUT);
+            if (! $this->writeLine($json)) {
+                // The supervisor closed our stdout (restart, deploy, crash):
+                // the result has no reader, so stop instead of erroring.
+                break;
+            }
         }
 
         fclose($stdin);
 
         return 0;
+    }
+
+    /**
+     * Write one NDJSON line to stdout for the Rust supervisor.
+     *
+     * When the supervisor goes away (restart, deploy, crash) the pipe's read end
+     * is closed and fwrite() fails with EPIPE ("Broken pipe"). Laravel would turn
+     * that warning into an ErrorException and report it, although nothing is
+     * wrong with the job or the app -- the worker simply has nobody to talk to.
+     * Suppress the warning and let the caller exit cleanly instead.
+     *
+     * @return bool false when the pipe is gone and the loop should stop
+     */
+    protected function writeLine(string $line): bool
+    {
+        $data = $line . "\n";
+        $length = strlen($data);
+        $written = 0;
+
+        while ($written < $length) {
+            $bytes = @fwrite(STDOUT, $written === 0 ? $data : substr($data, $written));
+
+            if ($bytes === false || $bytes === 0) {
+                return false;
+            }
+
+            $written += $bytes;
+        }
+
+        return @fflush(STDOUT) !== false;
     }
 
     /**

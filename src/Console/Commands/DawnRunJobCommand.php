@@ -20,6 +20,9 @@ class DawnRunJobCommand extends Command
 
     public function handle(): int
     {
+        // stdout writes below are @-suppressed: if the supervisor has gone away
+        // the pipe is broken (EPIPE) and there is nobody left to read the
+        // result, so a warning-turned-ErrorException would only add noise.
         $rawPayload = file_get_contents('php://stdin');
 
         if (empty($rawPayload)) {
@@ -35,8 +38,8 @@ class DawnRunJobCommand extends Command
                 'exception' => 'Invalid job payload: missing data.command',
                 'trace' => '',
             ];
-            fwrite(STDOUT, json_encode($result) . "\n");
-            fflush(STDOUT);
+            @fwrite(STDOUT, json_encode($result) . "\n");
+            @fflush(STDOUT);
             return 1;
         }
 
@@ -66,8 +69,8 @@ class DawnRunJobCommand extends Command
                     'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
                     'logs' => array_slice($capturedLogs, 0, 50),
                 ];
-                fwrite(STDOUT, json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
-                fflush(STDOUT);
+                @fwrite(STDOUT, json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
+                @fflush(STDOUT);
                 return 0;
             }
 
@@ -76,8 +79,8 @@ class DawnRunJobCommand extends Command
                 'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
                 'logs' => array_slice($capturedLogs, 0, 50),
             ];
-            fwrite(STDOUT, json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
-            fflush(STDOUT);
+            @fwrite(STDOUT, json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
+            @fflush(STDOUT);
 
             return 0;
         } catch (\Throwable $e) {
@@ -90,8 +93,8 @@ class DawnRunJobCommand extends Command
                 'runtime_ms' => (int) ((hrtime(true) - $startTime) / 1_000_000),
                 'logs' => array_slice($capturedLogs, 0, 50),
             ];
-            fwrite(STDOUT, json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
-            fflush(STDOUT);
+            @fwrite(STDOUT, json_encode($result, JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
+            @fflush(STDOUT);
 
             return 1;
         }
