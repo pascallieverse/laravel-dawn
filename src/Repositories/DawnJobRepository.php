@@ -308,7 +308,7 @@ class DawnJobRepository implements JobRepository
         $recentKey = $this->prefix.'recent_jobs';
 
         // Get recent job IDs with their scores
-        $idsWithScores = $conn->zrevrange($recentKey, 0, 499, 'WITHSCORES');
+        $idsWithScores = $conn->zrevrange($recentKey, 0, 499, ['withscores' => true]);
 
         if (empty($idsWithScores)) {
             return;
@@ -407,7 +407,7 @@ class DawnJobRepository implements JobRepository
         $stats = ['recovered' => 0, 'retried' => 0, 'failed' => 0];
 
         // Get all pending job IDs with their scores (reserved_at timestamps)
-        $idsWithScores = $conn->zrange($pendingKey, 0, -1, 'WITHSCORES');
+        $idsWithScores = $conn->zrange($pendingKey, 0, -1, ['withscores' => true]);
 
         if (empty($idsWithScores)) {
             return $stats;
