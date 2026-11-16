@@ -31,6 +31,20 @@ class DawnQueue extends RedisQueue implements QueueContract
     }
 
     /**
+     * The Redis key of a queue, with the same app prefix as getQueue().
+     *
+     * Newer Laravel versions build their keys through this method instead
+     * of getQueue() (laterRaw, size, pendingSize/delayedSize/reservedSize,
+     * pop, clear, ...). Without this override every delayed job landed in
+     * the shared, unprefixed `queues:default:delayed`, which no Dawn worker
+     * reads: `->delay()` jobs (notification re-checks, reminders) never ran.
+     */
+    protected function getQueueRedisKey($queue = null)
+    {
+        return $this->getQueue($queue);
+    }
+
+    /**
      * Push a raw payload onto the queue.
      *
      * Skips the `:notify` rpush that Laravel's RedisQueue performs. The Dawn
