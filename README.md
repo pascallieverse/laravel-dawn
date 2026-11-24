@@ -268,6 +268,8 @@ chmod +x vendor/pascallieverse/laravel-dawn/bin/dawn-linux-x64
 php artisan dawn:terminate
 ```
 
+On termination Dawn takes no new jobs and gives the running ones 30 seconds to finish. A job that is still running after that is stopped and handed to the restarted Dawn, which starts it again as soon as it is up (the interrupted attempt counts towards its tries). Jobs that were waiting behind it follow in their original order. Set `DAWN_SHUTDOWN_GRACE` (seconds) in Dawn's environment to wait longer or shorter.
+
 A full deployment script example:
 
 ```bash
